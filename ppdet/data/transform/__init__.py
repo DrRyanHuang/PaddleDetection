@@ -17,14 +17,17 @@ from . import batch_operators
 from . import keypoint_operators
 from . import mot_operators
 from . import rotated_operators
+from . import obj2seq_trans
 
 from .operators import *
 from .batch_operators import *
 from .keypoint_operators import *
 from .mot_operators import *
 from .rotated_operators import *
+from .obj2seq_trans import *
 
 __all__ = []
 __all__ += registered_ops
 __all__ += keypoint_operators.__all__
 __all__ += mot_operators.__all__
+__all__ += obj2seq_trans.__all__

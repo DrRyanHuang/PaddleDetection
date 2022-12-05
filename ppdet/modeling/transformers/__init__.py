@@ -17,9 +17,13 @@ from . import utils
 from . import matchers
 from . import position_encoding
 from . import deformable_transformer
+from . import obj2seq_transformer
+from . import prompt_indicator
 
 from .detr_transformer import *
 from .utils import *
 from .matchers import *
 from .position_encoding import *
 from .deformable_transformer import *
+from .obj2seq_transformer import *
+from .prompt_indicator import PromptIndicator

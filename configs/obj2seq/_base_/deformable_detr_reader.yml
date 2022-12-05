@@ -1,4 +1,4 @@
-worker_num: 2
+worker_num: 1
 TrainReader:
   sample_transforms:
   - Decode: {}
@@ -13,6 +13,8 @@ TrainReader:
   - NormalizeBox: {}
   - BboxXYXY2XYWH: {}
   - Permute: {}
+  - GenerateClassificationResults: {num_cats: 80}
+  - RearrangeByCls: {min_keypoints_train: 0}
   batch_transforms:
   - PadMaskBatch: {pad_to_stride: -1, return_pad_mask: true}
   batch_size: 2
@@ -28,6 +30,8 @@ EvalReader:
   - Resize: {target_size: [800, 1333], keep_ratio: True}
   - NormalizeImage: {is_scale: true, mean: [0.485,0.456,0.406], std: [0.229, 0.224,0.225]}
   - Permute: {}
+  - GenerateClassificationResults: {num_cats: 80}
+  - RearrangeByCls: {}
   batch_transforms:
   - PadMaskBatch: {pad_to_stride: -1, return_pad_mask: true}
   batch_size: 1

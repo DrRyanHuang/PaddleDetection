@@ -98,11 +98,10 @@ class PositionEmbedding(nn.Layer):
             y_emb = self.row_embed(j)
             pos = paddle.concat(
                 [
-                    x_emb.unsqueeze(0).repeat(h, 1, 1),
-                    y_emb.unsqueeze(1).repeat(1, w, 1),
+                    x_emb.unsqueeze(0).tile([h, 1, 1]),
+                    y_emb.unsqueeze(1).tile([1, w, 1]),
                 ],
-                axis=-1).transpose([2, 0, 1]).unsqueeze(0).tile(mask.shape[0],
-                                                                1, 1, 1)
+                axis=-1).transpose([2, 0, 1]).unsqueeze(0)
             return pos
         else:
             raise ValueError(f"not supported {self.embed_type}")

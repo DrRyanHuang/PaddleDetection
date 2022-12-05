@@ -24,14 +24,19 @@ import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle import ParamAttr
+from addict import Dict
+from yacs.config import CfgNode as CN
+import copy
 
 from ppdet.core.workspace import register
 from ..layers import MultiHeadAttention
 from .position_encoding import PositionEmbedding
 from .utils import _get_clones, deformable_attention_core_func
 from ..initializer import linear_init_, constant_, xavier_uniform_, normal_
+from .prompt_indicator import PromptIndicator
+from .object_decoder import ObjectDecoder
 
-__all__ = ['DeformableTransformer']
+__all__ = ['Obj2SeqDeformableTransformer']
 
 
 class MSDeformableAttention(nn.Layer):
@@ -95,8 +100,7 @@ class MSDeformableAttention(nn.Layer):
                 reference_points,
                 value,
                 value_spatial_shapes,
-                value_mask=None,
-                **kwarg):
+                value_mask=None):
         """
         Args:
             query (Tensor): [bs, query_length, C]
@@ -117,14 +121,8 @@ class MSDeformableAttention(nn.Layer):
         if value_mask is not None:
             value_mask = value_mask.astype(value.dtype).unsqueeze(-1)
             value *= value_mask
-        
-        cs_batch = kwarg.get('cs_batch')
-        if cs_batch is not None:
-            value = paddle.concat([
-                    v[None].expand([cs, -1, -1]) for cs, v in zip(cs_batch, value)
-                ])
-            
         value = value.reshape([bs, Len_v, self.num_heads, self.head_dim])
+
         sampling_offsets = self.sampling_offsets(query).reshape(
             [bs, Len_q, self.num_heads, self.num_levels, self.num_points, 2])
         attention_weights = self.attention_weights(query).reshape(
@@ -304,30 +302,17 @@ class DeformableTransformerDecoderLayer(nn.Layer):
                 memory,
                 memory_spatial_shapes,
                 memory_mask=None,
-                query_pos_embed=None, **kwargs):
+                query_pos_embed=None):
         # self attention
         q = k = self.with_pos_embed(tgt, query_pos_embed)
         tgt2 = self.self_attn(q, k, value=tgt)
         tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
 
-        if "src_valid_ratios" in kwargs:
-            src_valid_ratios = kwargs.pop("src_valid_ratios") # bs, level, 2
-            # if reference_points.shape[-1] == 4:
-            #     src_valid_ratios = torch.cat([src_valid_ratios, src_valid_ratios], dim=-1)
-            # if the number of reference_points and number of src_valid_ratios not match.
-            # Expand and repeat for them            
-            if src_valid_ratios.shape[0] != reference_points.shape[0]:
-                repeat_times = (reference_points.shape[0] // src_valid_ratios.shape[0])
-                src_valid_ratios = src_valid_ratios.repeat_interleave(repeat_times, axis=0)
-            src_valid_ratios = src_valid_ratios[:, None] if reference_points.ndim == 3 else src_valid_ratios[:, None, None]
-            reference_points = reference_points[..., None, :] * src_valid_ratios
-
-
         # cross attention
         tgt2 = self.cross_attn(
             self.with_pos_embed(tgt, query_pos_embed), reference_points, memory,
-            memory_spatial_shapes, memory_mask, **kwargs)
+            memory_spatial_shapes, memory_mask)
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
 
@@ -366,12 +351,28 @@ class DeformableTransformerDecoder(nn.Layer):
         return output.unsqueeze(0)
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @register
-class DeformableTransformer(nn.Layer):
+class Obj2SeqDeformableTransformer(nn.Layer):
     __shared__ = ['hidden_dim']
 
     def __init__(self,
-                 num_queries=300,
+                 prompt_indicator=None,
+                 num_queries=80, # TODO
                  position_embed_type='sine',
                  return_intermediate_dec=True,
                  backbone_num_channels=[512, 1024, 2048],
@@ -386,9 +387,11 @@ class DeformableTransformer(nn.Layer):
                  dropout=0.1,
                  activation="relu",
                  lr_mult=0.1,
+                 # with_prompt_indicator=True,
+                 # with_object_decoder=True,
                  weight_attr=None,
                  bias_attr=None):
-        super(DeformableTransformer, self).__init__()
+        super(Obj2SeqDeformableTransformer, self).__init__()
         assert position_embed_type in ['sine', 'learned'], \
             f'ValueError: position_embed_type not supported {position_embed_type}!'
         assert len(backbone_num_channels) <= num_feature_levels
@@ -403,11 +406,11 @@ class DeformableTransformer(nn.Layer):
         self.encoder = DeformableTransformerEncoder(encoder_layer,
                                                     num_encoder_layers)
 
-        decoder_layer = DeformableTransformerDecoderLayer(
-            hidden_dim, nhead, dim_feedforward, dropout, activation,
-            num_feature_levels, num_decoder_points, weight_attr, bias_attr)
-        self.decoder = DeformableTransformerDecoder(
-            decoder_layer, num_decoder_layers, return_intermediate_dec)
+        # decoder_layer = DeformableTransformerDecoderLayer(
+        #     hidden_dim, nhead, dim_feedforward, dropout, activation,
+        #     num_feature_levels, num_decoder_points, weight_attr, bias_attr)
+        # self.decoder = DeformableTransformerDecoder(
+        #     decoder_layer, num_decoder_layers, return_intermediate_dec)
 
         self.level_embed = nn.Embedding(num_feature_levels, hidden_dim)
         self.tgt_embed = nn.Embedding(num_queries, hidden_dim)
@@ -451,7 +454,196 @@ class DeformableTransformer(nn.Layer):
             embed_type=position_embed_type,
             offset=-0.5)
 
-        self._reset_parameters()
+        self._reset_parameters()        
+        
+        
+        # basic layer config
+        BASIC_LAYER_CFG = CN()
+        BASIC_LAYER_CFG.hidden_dim = 256
+        BASIC_LAYER_CFG.nheads = 8
+        BASIC_LAYER_CFG.dim_feedforward = 1024
+        BASIC_LAYER_CFG.dropout = 0.
+        BASIC_LAYER_CFG.self_attn_dropout = 0.
+        BASIC_LAYER_CFG.activation = "relu"
+        BASIC_LAYER_CFG.pre_norm = False
+        # some removal
+        BASIC_LAYER_CFG.no_self_attn = False
+        BASIC_LAYER_CFG.cross_attn_no_value_proj = False
+        # for Deformable-DETR like
+        BASIC_LAYER_CFG.n_levels = 4
+        BASIC_LAYER_CFG.n_points = 4
+        
+        
+        # prompt_indicator
+        PROMPT_INDICATOR = CN()
+        PROMPT_INDICATOR.num_blocks = 2
+        PROMPT_INDICATOR.return_intermediate = True
+        PROMPT_INDICATOR.level_preserve = [] # only for deformable, empty means all feature levels are used
+        # cfg for attention layer
+        PROMPT_INDICATOR.BLOCK = copy.deepcopy(BASIC_LAYER_CFG)
+        PROMPT_INDICATOR.BLOCK.no_self_attn = True
+        # cfg for prompt vectors
+        PROMPT_INDICATOR.CLASS_PROMPTS = CN()
+        PROMPT_INDICATOR.CLASS_PROMPTS.num_classes = 80
+        PROMPT_INDICATOR.CLASS_PROMPTS.init_vectors = "" # .npy or .pth file, empty means random initialized
+        PROMPT_INDICATOR.CLASS_PROMPTS.fix_class_prompts = False
+        # cfg for classifier
+        PROMPT_INDICATOR.CLASSIFIER = CN()
+        PROMPT_INDICATOR.CLASSIFIER.type = 'dict'
+        PROMPT_INDICATOR.CLASSIFIER.hidden_dim = 256
+        PROMPT_INDICATOR.CLASSIFIER.num_layers = 2
+        PROMPT_INDICATOR.CLASSIFIER.init_prob = 0.1
+        PROMPT_INDICATOR.CLASSIFIER.num_points = 1
+        PROMPT_INDICATOR.CLASSIFIER.skip_and_init = False
+        PROMPT_INDICATOR.CLASSIFIER.normalize_before = False
+        # asl loss
+        PROMPT_INDICATOR.LOSS = CN()
+        PROMPT_INDICATOR.LOSS.losses = ['asl']
+        PROMPT_INDICATOR.LOSS.asl_optimized = True
+        PROMPT_INDICATOR.LOSS.asl_loss_weight = 0.25
+        PROMPT_INDICATOR.LOSS.asl_gamma_pos = 0.0
+        PROMPT_INDICATOR.LOSS.asl_gamma_neg = 2.0
+        PROMPT_INDICATOR.LOSS.asl_clip = 0.0
+        # cfg for retention_policy
+        PROMPT_INDICATOR.retain_categories = True
+        PROMPT_INDICATOR.RETENTION_POLICY = CN()
+        PROMPT_INDICATOR.RETENTION_POLICY.train_max_classes = 20
+        PROMPT_INDICATOR.RETENTION_POLICY.train_min_classes = 20
+        PROMPT_INDICATOR.RETENTION_POLICY.train_class_thr = 0.0
+        PROMPT_INDICATOR.RETENTION_POLICY.eval_min_classes = 20
+        PROMPT_INDICATOR.RETENTION_POLICY.eval_max_classes = 20
+        PROMPT_INDICATOR.RETENTION_POLICY.eval_class_thr = 0.0
+        
+        d_model = 256
+        if isinstance(prompt_indicator, str):
+            self.prompt_indicator = PromptIndicator(
+                d_model,
+                PROMPT_INDICATOR
+            )
+
+        
+        with_object_decoder = True
+        OBJECT_DECODER = CN()
+        OBJECT_DECODER.LAYER = copy.deepcopy(BASIC_LAYER_CFG)
+        OBJECT_DECODER.num_layers = 4
+        OBJECT_DECODER.num_query_position = 100
+        OBJECT_DECODER.spatial_prior = 'sigmoid'
+        OBJECT_DECODER.refine_reference_points = False
+        OBJECT_DECODER.with_query_pos_embed = False
+        # OUTPUT Layers
+        OBJECT_DECODER.HEAD = CN()
+        OBJECT_DECODER.HEAD.type = "SeqHead"
+        OBJECT_DECODER.HEAD.sg_previous_logits = False
+        OBJECT_DECODER.HEAD.combine_method = "none"
+        # for sequence head
+        OBJECT_DECODER.HEAD.pos_emb = True
+        OBJECT_DECODER.HEAD.num_steps = 4
+        OBJECT_DECODER.HEAD.num_classes = 80
+        OBJECT_DECODER.HEAD.task_category = "configs/obj2seq/tasks/coco_detection.json"
+        ## for change structure in attention
+        OBJECT_DECODER.HEAD.self_attn_proj = True
+        OBJECT_DECODER.HEAD.cross_attn_no_value_proj = True
+        OBJECT_DECODER.HEAD.no_ffn = True
+        ## to deperacate
+        OBJECT_DECODER.HEAD.keypoint_output = "nd_box_relative"
+        
+        # -------------- 有更新 --------------
+        OBJECT_DECODER.HEAD.hidden_dim = 256
+        OBJECT_DECODER.HEAD.nheads = 8
+        OBJECT_DECODER.HEAD.dim_feedforward = 1024
+        OBJECT_DECODER.HEAD.dropout = 0.
+        OBJECT_DECODER.HEAD.self_attn_dropout = 0.
+        OBJECT_DECODER.HEAD.activation = "relu"
+        OBJECT_DECODER.HEAD.pre_norm = False
+        # some removal
+        OBJECT_DECODER.HEAD.no_self_attn = False
+        OBJECT_DECODER.HEAD.cross_attn_no_value_proj = False
+        # for Deformable-DETR like
+        OBJECT_DECODER.HEAD.n_levels = 4
+        OBJECT_DECODER.HEAD.n_points = 4
+        
+
+        # if single classifier
+        OBJECT_DECODER.HEAD.CLASSIFIER = CN()
+        OBJECT_DECODER.HEAD.CLASSIFIER.type = 'dict'
+        OBJECT_DECODER.HEAD.CLASSIFIER.hidden_dim = 256
+        OBJECT_DECODER.HEAD.CLASSIFIER.num_layers = 2
+        OBJECT_DECODER.HEAD.CLASSIFIER.init_prob = 0.01
+        OBJECT_DECODER.HEAD.CLASSIFIER.num_points = 1
+        OBJECT_DECODER.HEAD.CLASSIFIER.skip_and_init = False
+        OBJECT_DECODER.HEAD.CLASSIFIER.normalize_before = False
+
+        OBJECT_DECODER.HEAD.LOSS = CN()
+        OBJECT_DECODER.HEAD.LOSS.num_classes = 80
+        OBJECT_DECODER.HEAD.LOSS.losses = ['labels', 'boxes']
+        OBJECT_DECODER.HEAD.LOSS.aux_loss = True
+        OBJECT_DECODER.HEAD.LOSS.focal_alpha = 0.25
+        OBJECT_DECODER.HEAD.LOSS.cls_loss_coef = 2.0
+        OBJECT_DECODER.HEAD.LOSS.bbox_loss_coef = 5.0
+        OBJECT_DECODER.HEAD.LOSS.giou_loss_coef = 2.0
+        OBJECT_DECODER.HEAD.LOSS.mse_loss_coef = 0.0
+        OBJECT_DECODER.HEAD.LOSS.keypoint_l1_loss_coef = 1.0
+        OBJECT_DECODER.HEAD.LOSS.keypoint_oks_loss_coef = 1.0
+        # more options for class loss
+        OBJECT_DECODER.HEAD.LOSS.bce_negative_weight = 1.0
+        OBJECT_DECODER.HEAD.LOSS.class_normalization = "num_box"  # ["num_box", "num_pts", "mean", "none"]
+        
+        # --------- 更新版本 ---------
+        OBJECT_DECODER.HEAD.LOSS.task_category = OBJECT_DECODER.HEAD.task_category
+        OBJECT_DECODER.HEAD.LOSS.num_classes   = OBJECT_DECODER.HEAD.num_classes
+
+        # for keypoints
+        OBJECT_DECODER.HEAD.LOSS.keypoint_criterion = "L1"
+        OBJECT_DECODER.HEAD.LOSS.keypoint_normalization = "num_box"  # ["num_box", "num_pts", "mean", "none"]
+        OBJECT_DECODER.HEAD.LOSS.oks_normalization = "num_box"
+        OBJECT_DECODER.HEAD.LOSS.keypoint_reference = "absolute" # ["absolute" or "relative"]
+        OBJECT_DECODER.HEAD.LOSS.keypoint_relative_ratio = 1.0
+
+        OBJECT_DECODER.HEAD.LOSS.MATCHER = CN()
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.fix_match_train = ""
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.fix_match_val = ""
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_class_type = "focal" # ["focal", "bce", "logits", "probs"]
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_class = 2.0
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_bbox = 5.0
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_giou = 2.0
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_keypoints_oks = 0.0
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_keypoints_l1 = 0.0
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_class_normalization = "none"
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_box_normalization = "none" # ["num_box", "num_pts", "mean", "none"]
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_keypoint_normalization = "none"
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_oks_normalization = "none"
+        #### maybe this is deprecated ?
+        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_keypoint_reference = "absolute" # ["absolute" or "relative"]
+                
+        
+        # object decoder
+        if with_object_decoder:
+            self.object_decoder = ObjectDecoder(d_model, args=OBJECT_DECODER)
+        else:
+            self.object_decoder = None
+        
+    
+    
+    # @classmethod
+    # def from_config(cls, cfg, *args, **kwargs):
+    #     # backbone
+    #     prompt_indicator = create(cfg['prompt_indicator'])
+    #     # # transformer
+    #     # kwargs = {'input_shape': backbone.out_shape}
+    #     # transformer = create(cfg['transformer'], **kwargs)
+    #     # # head
+    #     # kwargs = {
+    #     #     'hidden_dim': transformer.hidden_dim,
+    #     #     'nhead': transformer.nhead,
+    #     #     'input_shape': backbone.out_shape
+    #     # }
+    #     # detr_head = create(cfg['detr_head'], **kwargs)
+
+    #     return {
+    #         'prompt_indicator': prompt_indicator,
+    #         # 'transformer': transformer,
+    #         # "detr_head": detr_head,
+    #     }
 
     def _reset_parameters(self):
         normal_(self.level_embed.weight)
@@ -475,7 +667,7 @@ class DeformableTransformer(nn.Layer):
         valid_ratio = paddle.stack([valid_ratio_w, valid_ratio_h], -1)
         return valid_ratio
 
-    def forward(self, src_feats, src_mask=None):
+    def forward(self, src_feats, src_mask=None, targets=None):
         srcs = []
         for i in range(len(src_feats)):
             srcs.append(self.input_proj[i](src_feats[i]))
@@ -522,6 +714,12 @@ class DeformableTransformer(nn.Layer):
         memory = self.encoder(src_flatten, spatial_shapes, mask_flatten,
                               lvl_pos_embed_flatten, valid_ratios)
 
+        level_start_index = paddle.concat((# spatial_shapes.new_zeros((1, )), 
+                                           paddle.zeros_like(spatial_shapes)[0][0],
+                                           spatial_shapes.prod(1).cumsum(0)[:-1]))
+        
+        
+        
         # prepare input for decoder
         bs, _, c = memory.shape
         query_embed = self.query_pos_embed.weight.unsqueeze(0).tile([bs, 1, 1])
@@ -529,6 +727,56 @@ class DeformableTransformer(nn.Layer):
         reference_points = F.sigmoid(self.reference_points(query_embed))
         reference_points_input = reference_points.unsqueeze(
             2) * valid_ratios.unsqueeze(1)
+        
+        
+        cls_kwargs = dict(src_level_start_index=level_start_index, 
+                          memory_spatial_shapes=spatial_shapes,
+                          reference_points=reference_points_input)
+        obj_kwargs = dict(src_spatial_shapes=spatial_shapes,
+                          src_level_start_index=level_start_index,
+                          src_valid_ratios=valid_ratios)
+        
+        outputs, loss_dict = {}, {}
+        if self.prompt_indicator is not None:
+            cls_outputs, cls_loss_dict = self.prompt_indicator(memory, mask_flatten, 
+                                                               targets=targets, kwargs=cls_kwargs)
+            outputs.update(cls_outputs)
+            loss_dict.update(cls_loss_dict)
+            additional_object_inputs = dict(
+                bs_idx = outputs["bs_idx"] if "bs_idx" in outputs else None,
+                cls_idx = outputs["cls_idx"] if "cls_idx" in outputs else None,
+                class_vector = outputs["tgt_class"], # cs_all, d
+                previous_logits = outputs["cls_label_logits"], # bs, 80
+            )
+        else:
+            additional_object_inputs = {}
+        
+        # obj_kwargs = {}
+        if self.object_decoder is not None:
+            obj_outputs, obj_loss_dict = self.object_decoder(memory, mask_flatten, 
+                                                             targets=targets, 
+                                                             additional_info=additional_object_inputs, 
+                                                             kwargs=obj_kwargs)
+            outputs.update(obj_outputs)
+            loss_dict.update(obj_loss_dict)
+
+        return outputs, loss_dict
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+
 
         # decoder
         hs = self.decoder(tgt, reference_points_input, memory, spatial_shapes,

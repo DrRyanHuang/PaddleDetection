@@ -92,6 +92,8 @@ class DetDataset(Dataset):
         else:
             roidb['curr_iter'] = self._curr_iter
         self._curr_iter += 1
+        
+        roidb['num_classes'] = len(self.catid2clsid) # COCODataset 80 cls
 
         return self.transform(roidb)
 
