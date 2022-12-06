@@ -22,6 +22,15 @@ from .unified_matcher import build_matcher
 #                        get_world_size, is_dist_avail_and_initialized)
 from . import unified_matcher as box_ops
 
+def zero_zero_select(x, indice):
+    if x.size == 0 or indice.size == 0:
+        return x
+    else:
+        res = x[indice]
+        if res.ndim == 1:
+            res = res[None]
+        return res
+
 
 def sigmoid_focal_loss(inputs, targets, num_boxes, alpha: float = 0.25, gamma: float = 2):
     """
@@ -39,7 +48,7 @@ def sigmoid_focal_loss(inputs, targets, num_boxes, alpha: float = 0.25, gamma: f
     Returns:
         Loss tensor
     """
-    prob = inputs.sigmoid()
+    prob = F.sigmoid(inputs)
     ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
     p_t = prob * targets + (1 - prob) * (1 - targets)
     loss = ce_loss * ((1 - p_t) ** gamma)
@@ -103,7 +112,7 @@ class UnifiedSingleClassCriterion(nn.Layer):
 
         idx = self._get_src_permutation_idx(indices)
         target_classes_onehot = paddle.zeros([src_logits.shape[0], src_logits.shape[1]],
-                                            dtype=src_logits.dtype, layout=src_logits.layout, device=src_logits.device)
+                                            dtype=src_logits.dtype)
         target_classes_onehot[idx] = 1
 
         loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_boxes=None, alpha=self.focal_alpha, gamma=2) / self.loss_normalization[self.class_normalization]
@@ -146,7 +155,8 @@ class UnifiedSingleClassCriterion(nn.Layer):
         assert 'pred_boxes' in outputs
         idx = self._get_src_permutation_idx(indices)
         src_boxes = outputs['pred_boxes'][idx]
-        target_boxes = paddle.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
+        # target_boxes = paddle.concat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], axis=0)
+        target_boxes = paddle.concat([zero_zero_select(t['boxes'], i) for t, (_, i) in zip(targets, indices)], axis=0)
 
         loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
 
@@ -173,7 +183,7 @@ class UnifiedSingleClassCriterion(nn.Layer):
         tgt_areas = tgt_wh[..., 0] * tgt_wh[..., 1]
         sigmas = KPS_OKS_SIGMAS # self.sigmas
 
-        # if with_center:
+        # if with_center: # 原有 torch 注释
         #     tgt_center = tgt_bboxes[..., 0:2]
         #     sigma_center = sigmas.mean()
         #     tgt_joints = paddle.cat([tgt_joints, tgt_center[:, None, :]], dim=1)
@@ -206,8 +216,8 @@ class UnifiedSingleClassCriterion(nn.Layer):
 
     def _get_src_permutation_idx(self, indices):
         # permute predictions following indices
-        batch_idx = paddle.cat([paddle.full_like(src, i) for i, (src, _) in enumerate(indices)])
-        src_idx = paddle.cat([src for (src, _) in indices])
+        batch_idx = paddle.concat([paddle.full_like(src, i) for i, (src, _) in enumerate(indices)])
+        src_idx = paddle.concat([src for (src, _) in indices])
         return batch_idx, src_idx
 
     def _get_tgt_permutation_idx(self, indices):

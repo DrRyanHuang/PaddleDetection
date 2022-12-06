@@ -52,12 +52,17 @@ class ClasswiseCriterion(nn.Layer):
 
             task_info = self.taskCategory[tKey]
             target = []
-            for id_b, id_c in zip(bs_idx, cls_idx):
+            for _, (id_b, id_c) in enumerate(zip(bs_idx, cls_idx)):
                 tgtThis = {}
                 id_c = id_c.item()
                 # if id_c in targets[id_b]:
                 if id_c in targets["gt_class"][id_b].numpy().flatten().tolist():
-                    tgtOrigin = targets[id_b][id_c]
+                    id_c_mask =  (targets["gt_class"][id_b].flatten() == id_c)
+                    tgtOrigin = {
+                        "boxes"  : targets["gt_bbox"][id_b][id_c_mask],
+                        "classes": targets["gt_class"][id_b][id_c_mask],
+                        }
+                    # tgtOrigin = targets[id_b][id_c]
                     for key in task_info.required_targets:
                         tgtThis[key] = tgtOrigin[key]
                 else:
