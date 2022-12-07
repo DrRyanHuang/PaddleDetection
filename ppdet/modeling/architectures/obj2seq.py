@@ -33,7 +33,7 @@ class Obj2Seq(BaseArch):
     def __init__(self,
                  backbone,
                  transformer,
-                 detr_head,
+                 detr_head=None,
                  post_process=None,
                  num_feature_levels=4):
         super(Obj2Seq, self).__init__()
@@ -87,12 +87,12 @@ class Obj2Seq(BaseArch):
             'nhead': transformer.nhead,
             'input_shape': backbone.out_shape
         }
-        detr_head = create(cfg['detr_head'], **kwargs)
+        # detr_head = create(cfg['detr_head'], **kwargs)
 
         return {
             'backbone': backbone,
             'transformer': transformer,
-            "detr_head": detr_head,
+            # "detr_head": detr_head,
         }
 
     def _forward(self):
@@ -114,20 +114,38 @@ class Obj2Seq(BaseArch):
         # Transformer
         out_transformer = self.transformer(body_feats, self.inputs['pad_mask'], self.inputs)
 
-        # DETR Head
+        
+        outputs, loss_dict = out_transformer
+        # losses = sum(loss_dict[k] for k in loss_dict.keys())
+
+        # # reduce losses over all GPUs for logging purposes
+        # loss_dict_reduced = utils.reduce_dict(loss_dict)
+        # loss_dict_reduced = {k: v
+        #                      for k, v in loss_dict_reduced.items()}
+        # losses_reduced = sum(loss_dict_reduced.values())
+
+        # det_loss  = sum(loss_dict_reduced[k] for k in loss_dict_reduced.keys() if 'kps' not in k).item()
+        # loss_value = losses_reduced.item()
+        
+        # # DETR Head
+        # if self.training:
+        #     return self.detr_head(out_transformer, body_feats, self.inputs)
+        # else:
+        #     preds = self.detr_head(out_transformer, body_feats)
+        #     bbox, bbox_num = self.post_process(preds, self.inputs['im_shape'],
+        #                                        self.inputs['scale_factor'])
+        # return bbox, bbox_num
+        
         if self.training:
-            return self.detr_head(out_transformer, body_feats, self.inputs)
-        else:
-            preds = self.detr_head(out_transformer, body_feats)
-            bbox, bbox_num = self.post_process(preds, self.inputs['im_shape'],
-                                               self.inputs['scale_factor'])
-            return bbox, bbox_num
+            return loss_dict
+
 
     def get_loss(self, ):
         losses = self._forward()
         losses.update({
             'loss':
-            paddle.add_n([v for k, v in losses.items() if 'log' not in k])
+            # paddle.add_n([v for k, v in losses.items() if 'log' not in k])
+            sum(losses[k] for k in losses.keys())
         })
         return losses
 

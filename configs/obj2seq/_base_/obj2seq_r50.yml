@@ -7,8 +7,8 @@ use_focal_loss: True
 Obj2Seq:
   backbone: ResNet
   transformer: Obj2SeqDeformableTransformer
-  detr_head: DeformableDETRHead
-  post_process: DETRBBoxPostProcess
+  # detr_head: DeformableDETRHead
+  # post_process: DETRBBoxPostProcess
 
 
 ResNet:
