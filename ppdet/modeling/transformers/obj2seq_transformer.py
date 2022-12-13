@@ -35,8 +35,168 @@ from .utils import _get_clones, deformable_attention_core_func
 from ..initializer import linear_init_, constant_, xavier_uniform_, normal_
 from .prompt_indicator import PromptIndicator
 from .object_decoder import ObjectDecoder
+from .attention_modules import DeformableEncoderLayer
 
 __all__ = ['Obj2SeqDeformableTransformer']
+
+
+
+# basic layer config
+BASIC_LAYER_CFG = CN()
+BASIC_LAYER_CFG.hidden_dim = 256
+BASIC_LAYER_CFG.nheads = 8
+BASIC_LAYER_CFG.dim_feedforward = 1024
+BASIC_LAYER_CFG.dropout = 0.
+BASIC_LAYER_CFG.self_attn_dropout = 0.
+BASIC_LAYER_CFG.activation = "relu"
+BASIC_LAYER_CFG.pre_norm = False
+# some removal
+BASIC_LAYER_CFG.no_self_attn = False
+BASIC_LAYER_CFG.cross_attn_no_value_proj = False
+# for Deformable-DETR like
+BASIC_LAYER_CFG.n_levels = 4
+BASIC_LAYER_CFG.n_points = 4
+
+
+ENCODER_LAYER = copy.deepcopy(BASIC_LAYER_CFG)
+
+OBJECT_DECODER = CN()
+OBJECT_DECODER.LAYER = copy.deepcopy(BASIC_LAYER_CFG)
+OBJECT_DECODER.num_layers = 4
+OBJECT_DECODER.num_query_position = 100
+OBJECT_DECODER.spatial_prior = 'sigmoid'
+OBJECT_DECODER.refine_reference_points = False
+OBJECT_DECODER.with_query_pos_embed = False
+# OUTPUT Layers
+OBJECT_DECODER.HEAD = CN()
+OBJECT_DECODER.HEAD.type = "SeqHead"
+OBJECT_DECODER.HEAD.sg_previous_logits = False
+OBJECT_DECODER.HEAD.combine_method = "none"
+# for sequence head
+OBJECT_DECODER.HEAD.pos_emb = True
+OBJECT_DECODER.HEAD.num_steps = 4
+OBJECT_DECODER.HEAD.num_classes = 80
+OBJECT_DECODER.HEAD.task_category = "configs/obj2seq/tasks/coco_detection.json"
+## for change structure in attention
+OBJECT_DECODER.HEAD.self_attn_proj = True
+OBJECT_DECODER.HEAD.cross_attn_no_value_proj = True
+OBJECT_DECODER.HEAD.no_ffn = True
+## to deperacate
+OBJECT_DECODER.HEAD.keypoint_output = "nd_box_relative"
+
+# -------------- 有更新 --------------
+OBJECT_DECODER.HEAD.hidden_dim = 256
+OBJECT_DECODER.HEAD.nheads = 8
+OBJECT_DECODER.HEAD.dim_feedforward = 1024
+OBJECT_DECODER.HEAD.dropout = 0.
+OBJECT_DECODER.HEAD.self_attn_dropout = 0.
+OBJECT_DECODER.HEAD.activation = "relu"
+OBJECT_DECODER.HEAD.pre_norm = False
+# some removal
+OBJECT_DECODER.HEAD.no_self_attn = False
+OBJECT_DECODER.HEAD.cross_attn_no_value_proj = False
+# for Deformable-DETR like
+OBJECT_DECODER.HEAD.n_levels = 4
+OBJECT_DECODER.HEAD.n_points = 4
+
+
+# if single classifier
+OBJECT_DECODER.HEAD.CLASSIFIER = CN()
+OBJECT_DECODER.HEAD.CLASSIFIER.type = 'dict'
+OBJECT_DECODER.HEAD.CLASSIFIER.hidden_dim = 256
+OBJECT_DECODER.HEAD.CLASSIFIER.num_layers = 2
+OBJECT_DECODER.HEAD.CLASSIFIER.init_prob = 0.01
+OBJECT_DECODER.HEAD.CLASSIFIER.num_points = 1
+OBJECT_DECODER.HEAD.CLASSIFIER.skip_and_init = False
+OBJECT_DECODER.HEAD.CLASSIFIER.normalize_before = False
+
+OBJECT_DECODER.HEAD.LOSS = CN()
+OBJECT_DECODER.HEAD.LOSS.num_classes = 80
+OBJECT_DECODER.HEAD.LOSS.losses = ['labels', 'boxes']
+OBJECT_DECODER.HEAD.LOSS.aux_loss = True
+OBJECT_DECODER.HEAD.LOSS.focal_alpha = 0.25
+OBJECT_DECODER.HEAD.LOSS.cls_loss_coef = 2.0
+OBJECT_DECODER.HEAD.LOSS.bbox_loss_coef = 5.0
+OBJECT_DECODER.HEAD.LOSS.giou_loss_coef = 2.0
+OBJECT_DECODER.HEAD.LOSS.mse_loss_coef = 0.0
+OBJECT_DECODER.HEAD.LOSS.keypoint_l1_loss_coef = 1.0
+OBJECT_DECODER.HEAD.LOSS.keypoint_oks_loss_coef = 1.0
+# more options for class loss
+OBJECT_DECODER.HEAD.LOSS.bce_negative_weight = 1.0
+OBJECT_DECODER.HEAD.LOSS.class_normalization = "num_box"  # ["num_box", "num_pts", "mean", "none"]
+
+# --------- 更新版本 ---------
+OBJECT_DECODER.HEAD.LOSS.task_category = OBJECT_DECODER.HEAD.task_category
+OBJECT_DECODER.HEAD.LOSS.num_classes   = OBJECT_DECODER.HEAD.num_classes
+
+# for keypoints
+OBJECT_DECODER.HEAD.LOSS.keypoint_criterion = "L1"
+OBJECT_DECODER.HEAD.LOSS.keypoint_normalization = "num_box"  # ["num_box", "num_pts", "mean", "none"]
+OBJECT_DECODER.HEAD.LOSS.oks_normalization = "num_box"
+OBJECT_DECODER.HEAD.LOSS.keypoint_reference = "absolute" # ["absolute" or "relative"]
+OBJECT_DECODER.HEAD.LOSS.keypoint_relative_ratio = 1.0
+
+OBJECT_DECODER.HEAD.LOSS.MATCHER = CN()
+OBJECT_DECODER.HEAD.LOSS.MATCHER.fix_match_train = ""
+OBJECT_DECODER.HEAD.LOSS.MATCHER.fix_match_val = ""
+OBJECT_DECODER.HEAD.LOSS.MATCHER.set_class_type = "focal" # ["focal", "bce", "logits", "probs"]
+OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_class = 2.0
+OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_bbox = 5.0
+OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_giou = 2.0
+OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_keypoints_oks = 0.0
+OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_keypoints_l1 = 0.0
+OBJECT_DECODER.HEAD.LOSS.MATCHER.set_class_normalization = "none"
+OBJECT_DECODER.HEAD.LOSS.MATCHER.set_box_normalization = "none" # ["num_box", "num_pts", "mean", "none"]
+OBJECT_DECODER.HEAD.LOSS.MATCHER.set_keypoint_normalization = "none"
+OBJECT_DECODER.HEAD.LOSS.MATCHER.set_oks_normalization = "none"
+#### maybe this is deprecated ?
+OBJECT_DECODER.HEAD.LOSS.MATCHER.set_keypoint_reference = "absolute" # ["absolute" or "relative"]
+
+
+
+
+
+# prompt_indicator
+PROMPT_INDICATOR = CN()
+PROMPT_INDICATOR.num_blocks = 2
+PROMPT_INDICATOR.return_intermediate = True
+PROMPT_INDICATOR.level_preserve = [] # only for deformable, empty means all feature levels are used
+# cfg for attention layer
+PROMPT_INDICATOR.BLOCK = copy.deepcopy(BASIC_LAYER_CFG)
+PROMPT_INDICATOR.BLOCK.no_self_attn = True
+# cfg for prompt vectors
+PROMPT_INDICATOR.CLASS_PROMPTS = CN()
+PROMPT_INDICATOR.CLASS_PROMPTS.num_classes = 80
+PROMPT_INDICATOR.CLASS_PROMPTS.init_vectors = "" # .npy or .pth file, empty means random initialized
+PROMPT_INDICATOR.CLASS_PROMPTS.fix_class_prompts = False
+# cfg for classifier
+PROMPT_INDICATOR.CLASSIFIER = CN()
+PROMPT_INDICATOR.CLASSIFIER.type = 'dict'
+PROMPT_INDICATOR.CLASSIFIER.hidden_dim = 256
+PROMPT_INDICATOR.CLASSIFIER.num_layers = 2
+PROMPT_INDICATOR.CLASSIFIER.init_prob = 0.1
+PROMPT_INDICATOR.CLASSIFIER.num_points = 1
+PROMPT_INDICATOR.CLASSIFIER.skip_and_init = False
+PROMPT_INDICATOR.CLASSIFIER.normalize_before = False
+# asl loss
+PROMPT_INDICATOR.LOSS = CN()
+PROMPT_INDICATOR.LOSS.losses = ['asl']
+PROMPT_INDICATOR.LOSS.asl_optimized = True
+PROMPT_INDICATOR.LOSS.asl_loss_weight = 0.25
+PROMPT_INDICATOR.LOSS.asl_gamma_pos = 0.0
+PROMPT_INDICATOR.LOSS.asl_gamma_neg = 2.0
+PROMPT_INDICATOR.LOSS.asl_clip = 0.0
+# cfg for retention_policy
+PROMPT_INDICATOR.retain_categories = True
+PROMPT_INDICATOR.RETENTION_POLICY = CN()
+PROMPT_INDICATOR.RETENTION_POLICY.train_max_classes = 20
+PROMPT_INDICATOR.RETENTION_POLICY.train_min_classes = 20
+PROMPT_INDICATOR.RETENTION_POLICY.train_class_thr = 0.0
+PROMPT_INDICATOR.RETENTION_POLICY.eval_min_classes = 20
+PROMPT_INDICATOR.RETENTION_POLICY.eval_max_classes = 20
+PROMPT_INDICATOR.RETENTION_POLICY.eval_class_thr = 0.0
+
+
 
 
 class MSDeformableAttention(nn.Layer):
@@ -204,46 +364,46 @@ class DeformableTransformerEncoderLayer(nn.Layer):
         return src
 
 
-class DeformableTransformerEncoder(nn.Layer):
-    def __init__(self, encoder_layer, num_layers):
-        super(DeformableTransformerEncoder, self).__init__()
-        self.layers = _get_clones(encoder_layer, num_layers)
-        self.num_layers = num_layers
+# class DeformableTransformerEncoder(nn.Layer):
+#     def __init__(self, encoder_layer, num_layers):
+#         super(DeformableTransformerEncoder, self).__init__()
+#         self.layers = _get_clones(encoder_layer, num_layers)
+#         self.num_layers = num_layers
 
-    @staticmethod
-    def get_reference_points(spatial_shapes, valid_ratios):
-        valid_ratios = valid_ratios.unsqueeze(1)
-        reference_points = []
-        for i, (H, W) in enumerate(spatial_shapes.tolist()):
-            ref_y, ref_x = paddle.meshgrid(
-                paddle.linspace(0.5, H - 0.5, H),
-                paddle.linspace(0.5, W - 0.5, W))
-            ref_y = ref_y.flatten().unsqueeze(0) / (valid_ratios[:, :, i, 1] *
-                                                    H)
-            ref_x = ref_x.flatten().unsqueeze(0) / (valid_ratios[:, :, i, 0] *
-                                                    W)
-            reference_points.append(paddle.stack((ref_x, ref_y), axis=-1))
-        reference_points = paddle.concat(reference_points, 1).unsqueeze(2)
-        reference_points = reference_points * valid_ratios
-        return reference_points
+#     @staticmethod
+#     def get_reference_points(spatial_shapes, valid_ratios):
+#         valid_ratios = valid_ratios.unsqueeze(1)
+#         reference_points = []
+#         for i, (H, W) in enumerate(spatial_shapes.tolist()):
+#             ref_y, ref_x = paddle.meshgrid(
+#                 paddle.linspace(0.5, H - 0.5, H),
+#                 paddle.linspace(0.5, W - 0.5, W))
+#             ref_y = ref_y.flatten().unsqueeze(0) / (valid_ratios[:, :, i, 1] *
+#                                                     H)
+#             ref_x = ref_x.flatten().unsqueeze(0) / (valid_ratios[:, :, i, 0] *
+#                                                     W)
+#             reference_points.append(paddle.stack((ref_x, ref_y), axis=-1))
+#         reference_points = paddle.concat(reference_points, 1).unsqueeze(2)
+#         reference_points = reference_points * valid_ratios
+#         return reference_points
 
-    def forward(self,
-                src,
-                spatial_shapes,
-                src_mask=None,
-                pos_embed=None,
-                valid_ratios=None):
-        output = src
-        if valid_ratios is None:
-            valid_ratios = paddle.ones(
-                [src.shape[0], spatial_shapes.shape[0], 2])
-        reference_points = self.get_reference_points(spatial_shapes,
-                                                     valid_ratios)
-        for layer in self.layers:
-            output = layer(output, reference_points, spatial_shapes, src_mask,
-                           pos_embed)
+#     def forward(self,
+#                 src,
+#                 spatial_shapes,
+#                 src_mask=None,
+#                 pos_embed=None,
+#                 valid_ratios=None):
+#         output = src
+#         if valid_ratios is None:
+#             valid_ratios = paddle.ones(
+#                 [src.shape[0], spatial_shapes.shape[0], 2])
+#         reference_points = self.get_reference_points(spatial_shapes,
+#                                                      valid_ratios)
+#         for layer in self.layers:
+#             output = layer(output, reference_points, spatial_shapes, src_mask,
+#                            pos_embed)
 
-        return output
+#         return output
 
 
 class DeformableTransformerDecoderLayer(nn.Layer):
@@ -356,7 +516,18 @@ class DeformableTransformerDecoder(nn.Layer):
 
 
 
-
+class TransformerEncoder(nn.Layer):
+    def __init__(self, args_ENCODER_LAYER, enc_layers=6):
+        super(TransformerEncoder, self).__init__()
+        self.enc_layers = enc_layers
+        encoder_layer = DeformableEncoderLayer(args_ENCODER_LAYER)
+        self.encoder_layers =  _get_clones(encoder_layer, self.enc_layers)
+    
+    def forward(self, tgt, *args, **kwargs):
+        # tgt: bs, h, w, c || bs, l, c
+        for layer in self.encoder_layers:
+            tgt = layer(tgt, *args, **kwargs)
+        return tgt
 
 
 
@@ -400,11 +571,13 @@ class Obj2SeqDeformableTransformer(nn.Layer):
         self.nhead = nhead
         self.num_feature_levels = num_feature_levels
 
-        encoder_layer = DeformableTransformerEncoderLayer(
-            hidden_dim, nhead, dim_feedforward, dropout, activation,
-            num_feature_levels, num_encoder_points, weight_attr, bias_attr)
-        self.encoder = DeformableTransformerEncoder(encoder_layer,
-                                                    num_encoder_layers)
+        # encoder_layer = DeformableTransformerEncoderLayer(
+        #     hidden_dim, nhead, dim_feedforward, dropout, activation,
+        #     num_feature_levels, num_encoder_points, weight_attr, bias_attr)
+        # self.encoder = DeformableTransformerEncoder(encoder_layer,
+        #                                             num_encoder_layers)
+        
+        self.encoder = TransformerEncoder(ENCODER_LAYER)
 
         # decoder_layer = DeformableTransformerDecoderLayer(
         #     hidden_dim, nhead, dim_feedforward, dropout, activation,
@@ -422,6 +595,7 @@ class Obj2SeqDeformableTransformer(nn.Layer):
             weight_attr=ParamAttr(learning_rate=lr_mult),
             bias_attr=ParamAttr(learning_rate=lr_mult))
 
+        # ========= 此处用来给 ResNet 加层的 =========
         self.input_proj = nn.LayerList()
         for in_channels in backbone_num_channels:
             self.input_proj.append(
@@ -456,64 +630,6 @@ class Obj2SeqDeformableTransformer(nn.Layer):
 
         self._reset_parameters()        
         
-        
-        # basic layer config
-        BASIC_LAYER_CFG = CN()
-        BASIC_LAYER_CFG.hidden_dim = 256
-        BASIC_LAYER_CFG.nheads = 8
-        BASIC_LAYER_CFG.dim_feedforward = 1024
-        BASIC_LAYER_CFG.dropout = 0.
-        BASIC_LAYER_CFG.self_attn_dropout = 0.
-        BASIC_LAYER_CFG.activation = "relu"
-        BASIC_LAYER_CFG.pre_norm = False
-        # some removal
-        BASIC_LAYER_CFG.no_self_attn = False
-        BASIC_LAYER_CFG.cross_attn_no_value_proj = False
-        # for Deformable-DETR like
-        BASIC_LAYER_CFG.n_levels = 4
-        BASIC_LAYER_CFG.n_points = 4
-        
-        
-        # prompt_indicator
-        PROMPT_INDICATOR = CN()
-        PROMPT_INDICATOR.num_blocks = 2
-        PROMPT_INDICATOR.return_intermediate = True
-        PROMPT_INDICATOR.level_preserve = [] # only for deformable, empty means all feature levels are used
-        # cfg for attention layer
-        PROMPT_INDICATOR.BLOCK = copy.deepcopy(BASIC_LAYER_CFG)
-        PROMPT_INDICATOR.BLOCK.no_self_attn = True
-        # cfg for prompt vectors
-        PROMPT_INDICATOR.CLASS_PROMPTS = CN()
-        PROMPT_INDICATOR.CLASS_PROMPTS.num_classes = 80
-        PROMPT_INDICATOR.CLASS_PROMPTS.init_vectors = "" # .npy or .pth file, empty means random initialized
-        PROMPT_INDICATOR.CLASS_PROMPTS.fix_class_prompts = False
-        # cfg for classifier
-        PROMPT_INDICATOR.CLASSIFIER = CN()
-        PROMPT_INDICATOR.CLASSIFIER.type = 'dict'
-        PROMPT_INDICATOR.CLASSIFIER.hidden_dim = 256
-        PROMPT_INDICATOR.CLASSIFIER.num_layers = 2
-        PROMPT_INDICATOR.CLASSIFIER.init_prob = 0.1
-        PROMPT_INDICATOR.CLASSIFIER.num_points = 1
-        PROMPT_INDICATOR.CLASSIFIER.skip_and_init = False
-        PROMPT_INDICATOR.CLASSIFIER.normalize_before = False
-        # asl loss
-        PROMPT_INDICATOR.LOSS = CN()
-        PROMPT_INDICATOR.LOSS.losses = ['asl']
-        PROMPT_INDICATOR.LOSS.asl_optimized = True
-        PROMPT_INDICATOR.LOSS.asl_loss_weight = 0.25
-        PROMPT_INDICATOR.LOSS.asl_gamma_pos = 0.0
-        PROMPT_INDICATOR.LOSS.asl_gamma_neg = 2.0
-        PROMPT_INDICATOR.LOSS.asl_clip = 0.0
-        # cfg for retention_policy
-        PROMPT_INDICATOR.retain_categories = True
-        PROMPT_INDICATOR.RETENTION_POLICY = CN()
-        PROMPT_INDICATOR.RETENTION_POLICY.train_max_classes = 20
-        PROMPT_INDICATOR.RETENTION_POLICY.train_min_classes = 20
-        PROMPT_INDICATOR.RETENTION_POLICY.train_class_thr = 0.0
-        PROMPT_INDICATOR.RETENTION_POLICY.eval_min_classes = 20
-        PROMPT_INDICATOR.RETENTION_POLICY.eval_max_classes = 20
-        PROMPT_INDICATOR.RETENTION_POLICY.eval_class_thr = 0.0
-        
         d_model = 256
         if isinstance(prompt_indicator, str):
             self.prompt_indicator = PromptIndicator(
@@ -521,99 +637,7 @@ class Obj2SeqDeformableTransformer(nn.Layer):
                 PROMPT_INDICATOR
             )
 
-        
         with_object_decoder = True
-        OBJECT_DECODER = CN()
-        OBJECT_DECODER.LAYER = copy.deepcopy(BASIC_LAYER_CFG)
-        OBJECT_DECODER.num_layers = 4
-        OBJECT_DECODER.num_query_position = 100
-        OBJECT_DECODER.spatial_prior = 'sigmoid'
-        OBJECT_DECODER.refine_reference_points = False
-        OBJECT_DECODER.with_query_pos_embed = False
-        # OUTPUT Layers
-        OBJECT_DECODER.HEAD = CN()
-        OBJECT_DECODER.HEAD.type = "SeqHead"
-        OBJECT_DECODER.HEAD.sg_previous_logits = False
-        OBJECT_DECODER.HEAD.combine_method = "none"
-        # for sequence head
-        OBJECT_DECODER.HEAD.pos_emb = True
-        OBJECT_DECODER.HEAD.num_steps = 4
-        OBJECT_DECODER.HEAD.num_classes = 80
-        OBJECT_DECODER.HEAD.task_category = "configs/obj2seq/tasks/coco_detection.json"
-        ## for change structure in attention
-        OBJECT_DECODER.HEAD.self_attn_proj = True
-        OBJECT_DECODER.HEAD.cross_attn_no_value_proj = True
-        OBJECT_DECODER.HEAD.no_ffn = True
-        ## to deperacate
-        OBJECT_DECODER.HEAD.keypoint_output = "nd_box_relative"
-        
-        # -------------- 有更新 --------------
-        OBJECT_DECODER.HEAD.hidden_dim = 256
-        OBJECT_DECODER.HEAD.nheads = 8
-        OBJECT_DECODER.HEAD.dim_feedforward = 1024
-        OBJECT_DECODER.HEAD.dropout = 0.
-        OBJECT_DECODER.HEAD.self_attn_dropout = 0.
-        OBJECT_DECODER.HEAD.activation = "relu"
-        OBJECT_DECODER.HEAD.pre_norm = False
-        # some removal
-        OBJECT_DECODER.HEAD.no_self_attn = False
-        OBJECT_DECODER.HEAD.cross_attn_no_value_proj = False
-        # for Deformable-DETR like
-        OBJECT_DECODER.HEAD.n_levels = 4
-        OBJECT_DECODER.HEAD.n_points = 4
-        
-
-        # if single classifier
-        OBJECT_DECODER.HEAD.CLASSIFIER = CN()
-        OBJECT_DECODER.HEAD.CLASSIFIER.type = 'dict'
-        OBJECT_DECODER.HEAD.CLASSIFIER.hidden_dim = 256
-        OBJECT_DECODER.HEAD.CLASSIFIER.num_layers = 2
-        OBJECT_DECODER.HEAD.CLASSIFIER.init_prob = 0.01
-        OBJECT_DECODER.HEAD.CLASSIFIER.num_points = 1
-        OBJECT_DECODER.HEAD.CLASSIFIER.skip_and_init = False
-        OBJECT_DECODER.HEAD.CLASSIFIER.normalize_before = False
-
-        OBJECT_DECODER.HEAD.LOSS = CN()
-        OBJECT_DECODER.HEAD.LOSS.num_classes = 80
-        OBJECT_DECODER.HEAD.LOSS.losses = ['labels', 'boxes']
-        OBJECT_DECODER.HEAD.LOSS.aux_loss = True
-        OBJECT_DECODER.HEAD.LOSS.focal_alpha = 0.25
-        OBJECT_DECODER.HEAD.LOSS.cls_loss_coef = 2.0
-        OBJECT_DECODER.HEAD.LOSS.bbox_loss_coef = 5.0
-        OBJECT_DECODER.HEAD.LOSS.giou_loss_coef = 2.0
-        OBJECT_DECODER.HEAD.LOSS.mse_loss_coef = 0.0
-        OBJECT_DECODER.HEAD.LOSS.keypoint_l1_loss_coef = 1.0
-        OBJECT_DECODER.HEAD.LOSS.keypoint_oks_loss_coef = 1.0
-        # more options for class loss
-        OBJECT_DECODER.HEAD.LOSS.bce_negative_weight = 1.0
-        OBJECT_DECODER.HEAD.LOSS.class_normalization = "num_box"  # ["num_box", "num_pts", "mean", "none"]
-        
-        # --------- 更新版本 ---------
-        OBJECT_DECODER.HEAD.LOSS.task_category = OBJECT_DECODER.HEAD.task_category
-        OBJECT_DECODER.HEAD.LOSS.num_classes   = OBJECT_DECODER.HEAD.num_classes
-
-        # for keypoints
-        OBJECT_DECODER.HEAD.LOSS.keypoint_criterion = "L1"
-        OBJECT_DECODER.HEAD.LOSS.keypoint_normalization = "num_box"  # ["num_box", "num_pts", "mean", "none"]
-        OBJECT_DECODER.HEAD.LOSS.oks_normalization = "num_box"
-        OBJECT_DECODER.HEAD.LOSS.keypoint_reference = "absolute" # ["absolute" or "relative"]
-        OBJECT_DECODER.HEAD.LOSS.keypoint_relative_ratio = 1.0
-
-        OBJECT_DECODER.HEAD.LOSS.MATCHER = CN()
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.fix_match_train = ""
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.fix_match_val = ""
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_class_type = "focal" # ["focal", "bce", "logits", "probs"]
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_class = 2.0
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_bbox = 5.0
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_giou = 2.0
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_keypoints_oks = 0.0
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_cost_keypoints_l1 = 0.0
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_class_normalization = "none"
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_box_normalization = "none" # ["num_box", "num_pts", "mean", "none"]
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_keypoint_normalization = "none"
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_oks_normalization = "none"
-        #### maybe this is deprecated ?
-        OBJECT_DECODER.HEAD.LOSS.MATCHER.set_keypoint_reference = "absolute" # ["absolute" or "relative"]
                 
         
         # object decoder
@@ -659,18 +683,45 @@ class Obj2SeqDeformableTransformer(nn.Layer):
     def from_config(cls, cfg, input_shape):
         return {'backbone_num_channels': [i.channels for i in input_shape], }
 
-    def _get_valid_ratio(self, mask):
+    def _get_valid_ratio(self, mask): # mask 的比例 [bs, ]
         mask = mask.astype(paddle.float32)
         _, H, W = mask.shape
         valid_ratio_h = paddle.sum(mask[:, :, 0], 1) / H
         valid_ratio_w = paddle.sum(mask[:, 0, :], 1) / W
         valid_ratio = paddle.stack([valid_ratio_w, valid_ratio_h], -1)
         return valid_ratio
+    
+    
+    @staticmethod
+    def get_reference_points(spatial_shapes, valid_ratios):
+        valid_ratios = valid_ratios.unsqueeze(1)
+        reference_points = []
+        for i, (H, W) in enumerate(spatial_shapes.tolist()):
+            ref_y, ref_x = paddle.meshgrid(
+                paddle.linspace(0.5, H - 0.5, H),
+                paddle.linspace(0.5, W - 0.5, W))
+            ref_y = ref_y.flatten().unsqueeze(0) / (valid_ratios[:, :, i, 1] * H)
+            ref_x = ref_x.flatten().unsqueeze(0) / (valid_ratios[:, :, i, 0] * W)
+            reference_points.append(
+                paddle.stack((ref_x, ref_y), axis=-1)
+            )
+        reference_points = paddle.concat(reference_points, 1).unsqueeze(2)
+        reference_points = reference_points * valid_ratios
+        return reference_points # [bs, 17197, 4, 2]
+    
 
-    def forward(self, src_feats, src_mask=None, targets=None):
-        srcs = []
+    def forward(self, src_feats, src_mask, targets=None):
+        
+        # src_feats: a list of tensors [(bs, c, h_i, w_i)]
+        # src_mask : a list of tensors [(bs, h_i, w_i)]
+        
+        # ========= 加工变量 srcs 和 masks =========
+        srcs =  []
+        masks = []
         for i in range(len(src_feats)):
             srcs.append(self.input_proj[i](src_feats[i]))
+            masks.append(src_mask[i])
+            
         if self.num_feature_levels > len(srcs):
             len_srcs = len(srcs)
             for i in range(len_srcs, self.num_feature_levels):
@@ -678,45 +729,22 @@ class Obj2SeqDeformableTransformer(nn.Layer):
                     srcs.append(self.input_proj[i](src_feats[-1]))
                 else:
                     srcs.append(self.input_proj[i](srcs[-1]))
-        src_flatten = []
-        mask_flatten = []
-        lvl_pos_embed_flatten = []
-        spatial_shapes = []
-        valid_ratios = []
-        for level, src in enumerate(srcs):
-            bs, c, h, w = src.shape
-            spatial_shapes.append([h, w])
-            src = src.flatten(2).transpose([0, 2, 1])
-            src_flatten.append(src)
-            if src_mask is not None:
-                mask = F.interpolate(
-                    src_mask.unsqueeze(0).astype(src.dtype),
-                    size=(h, w))[0].astype('bool')
-            else:
-                mask = paddle.ones([bs, h, w], dtype='bool')
-            valid_ratios.append(self._get_valid_ratio(mask))
-            pos_embed = self.position_embedding(mask).flatten(2).transpose(
-                [0, 2, 1])
-            lvl_pos_embed = pos_embed + self.level_embed.weight[level].reshape(
-                [1, 1, -1])
-            lvl_pos_embed_flatten.append(lvl_pos_embed)
-            mask = mask.astype(src.dtype).flatten(1)
-            mask_flatten.append(mask)
-        src_flatten = paddle.concat(src_flatten, 1)
-        mask_flatten = paddle.concat(mask_flatten, 1)
-        lvl_pos_embed_flatten = paddle.concat(lvl_pos_embed_flatten, 1)
-        # [l, 2]
-        spatial_shapes = paddle.to_tensor(spatial_shapes, dtype='int64')
-        # [b, l, 2]
-        valid_ratios = paddle.stack(valid_ratios, 1)
+                    
+                mask = F.interpolate(masks[-1][None], size=srcs[-1].shape[-2:])[0]
+                masks.append(mask)
+        # ========= 加工变量 srcs 和 masks =========
+        
+        srcs, mask, enc_kwargs, cls_kwargs, obj_kwargs = self.prepare_for_deformable(srcs, masks)
 
         # encoder
-        memory = self.encoder(src_flatten, spatial_shapes, mask_flatten,
-                              lvl_pos_embed_flatten, valid_ratios)
+        srcs = self.encoder(srcs, padding_mask=mask, **enc_kwargs) if self.encoder is not None else srcs
+        
+        # memory = self.encoder(src_flatten, spatial_shapes, mask_flatten,
+        #                       lvl_pos_embed_flatten, valid_ratios)
 
-        level_start_index = paddle.concat((# spatial_shapes.new_zeros((1, )), 
-                                           paddle.zeros_like(spatial_shapes)[0][0],
-                                           spatial_shapes.prod(1).cumsum(0)[:-1]))
+        # level_start_index = paddle.concat((# spatial_shapes.new_zeros((1, )), 
+        #                                    paddle.zeros_like(spatial_shapes)[0][0],
+        #                                    spatial_shapes.prod(1).cumsum(0)[:-1]))
         
         
         
@@ -762,24 +790,56 @@ class Obj2SeqDeformableTransformer(nn.Layer):
 
         return outputs, loss_dict
         
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-
-
         # decoder
         hs = self.decoder(tgt, reference_points_input, memory, spatial_shapes,
                           mask_flatten, query_embed)
 
         return (hs, memory, reference_points)
+
+
+    def prepare_for_deformable(self, srcs, masks):
+        
+        src_flatten = []
+        mask_flatten = []
+        lvl_pos_embed_flatten = []
+        spatial_shapes = []
+        valid_ratios = []
+        for level, (src, mask) in enumerate(zip(srcs, masks)):
+            bs, c, h, w = src.shape
+            spatial_shapes.append([h, w])
+            
+            if self.encoder is not None:
+                pos_embed = self.position_embedding(mask).flatten(2).transpose([0, 2, 1])
+                lvl_pos_embed = pos_embed + self.level_embed.weight[level].reshape([1, 1, -1])
+                lvl_pos_embed_flatten.append(lvl_pos_embed)
+            
+            valid_ratios.append(self._get_valid_ratio(mask)) # [bs, h_, w_]
+            
+            # =============== src 和 mask 部分 ===============
+            src = src.flatten(2).transpose([0, 2, 1])
+            src_flatten.append(src)
+            mask = mask.flatten(1)
+            mask_flatten.append(mask)
+            # =============== src 和 mask 部分 ===============
+
+        src_flatten  = paddle.concat(src_flatten, 1)  # [bs, 11400, 256]
+        mask_flatten = paddle.concat(mask_flatten, 1) # [bs, 11400]
+        lvl_pos_embed_flatten = paddle.concat(lvl_pos_embed_flatten, 1) if self.encoder is not None else None  # [4, 11400, 256]
+        spatial_shapes = paddle.to_tensor(spatial_shapes, dtype='int64') # [4, 2]
+        level_start_index = paddle.concat(
+            [ paddle.zeros((1, ), dtype="int64"), spatial_shapes.prod(1).cumsum(0)[:-1] ]
+            ) # [4]
+        valid_ratios = paddle.stack(valid_ratios, 1) # [bs, 4, 2]
+        
+        reference_points_enc = self.get_reference_points(spatial_shapes, valid_ratios)
+        
+        enc_kwargs = dict(spatial_shapes = spatial_shapes,
+                          level_start_index = level_start_index,
+                          reference_points = reference_points_enc,
+                          pos = lvl_pos_embed_flatten)
+        cls_kwargs = dict(src_level_start_index=level_start_index)
+        obj_kwargs = dict(src_spatial_shapes=spatial_shapes,
+                          src_level_start_index=level_start_index,
+                          src_valid_ratios=valid_ratios)
+        
+        return src_flatten, mask_flatten, enc_kwargs, cls_kwargs, obj_kwargs

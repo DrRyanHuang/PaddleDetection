@@ -99,6 +99,10 @@ class Obj2Seq(BaseArch):
         # Backbone
         body_feats = self.backbone(self.inputs)
         
+        body_feats_mask = [F.interpolate(self.inputs['pad_mask'][None], 
+                                         size=x.shape[-2:]).squeeze()
+                               for x in body_feats]
+        
         # feats = []
         # for l, feat in enumerate(body_feats):
         #     feats.append(self.input_proj[l](feat))
@@ -112,7 +116,7 @@ class Obj2Seq(BaseArch):
         #         feats.append(src)
 
         # Transformer
-        out_transformer = self.transformer(body_feats, self.inputs['pad_mask'], self.inputs)
+        out_transformer = self.transformer(body_feats, body_feats_mask, self.inputs)
 
         
         outputs, loss_dict = out_transformer
@@ -138,6 +142,8 @@ class Obj2Seq(BaseArch):
         
         if self.training:
             return loss_dict
+        else:
+            return outputs
 
 
     def get_loss(self, ):

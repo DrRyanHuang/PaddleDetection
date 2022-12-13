@@ -36,7 +36,7 @@ class PositionEmbedding(nn.Layer):
                  scale=None,
                  embed_type='sine',
                  num_embeddings=50,
-                 offset=0.):
+                 offset=-0.5):
         super(PositionEmbedding, self).__init__()
         assert embed_type in ['sine', 'learned']
 
@@ -65,7 +65,7 @@ class PositionEmbedding(nn.Layer):
         Returns:
             pos (Tensor): [B, C, H, W]
         """
-        assert mask.dtype == paddle.bool
+        # assert mask.dtype == paddle.bool
         if self.embed_type == 'sine':
             mask = mask.astype('float32')
             y_embed = mask.cumsum(1, dtype='float32')
