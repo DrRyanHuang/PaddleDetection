@@ -119,7 +119,8 @@ def check_gradient_numerical(channels=4):
                                      level_start_index, sampling_locations_cuda,
                                      attention_weights_cuda)
     
-    output_cuda.sum().backward()
+    out_sum = output_cuda.sum()
+    out_sum.backward()
 
     res = paddle.allclose(
         value_paddle.grad, value_cuda.grad, rtol=1e-2, atol=1e-3).item()

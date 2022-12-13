@@ -37,6 +37,7 @@ from .prompt_indicator import PromptIndicator
 from .object_decoder import ObjectDecoder
 from .attention_modules import DeformableEncoderLayer
 
+
 __all__ = ['Obj2SeqDeformableTransformer']
 
 
@@ -712,8 +713,8 @@ class Obj2SeqDeformableTransformer(nn.Layer):
 
     def forward(self, src_feats, src_mask, targets=None):
         
-        # src_feats: a list of tensors [(bs, c, h_i, w_i)]
-        # src_mask : a list of tensors [(bs, h_i, w_i)]
+        # src_feats: a list of tensors [(bs, c, h_i, w_i), ...]
+        # src_mask : a list of tensors [(bs, h_i, w_i), ...]
         
         # ========= 加工变量 srcs 和 masks =========
         srcs =  []
@@ -739,46 +740,38 @@ class Obj2SeqDeformableTransformer(nn.Layer):
         # encoder
         srcs = self.encoder(srcs, padding_mask=mask, **enc_kwargs) if self.encoder is not None else srcs
         
-        # memory = self.encoder(src_flatten, spatial_shapes, mask_flatten,
-        #                       lvl_pos_embed_flatten, valid_ratios)
-
-        # level_start_index = paddle.concat((# spatial_shapes.new_zeros((1, )), 
-        #                                    paddle.zeros_like(spatial_shapes)[0][0],
-        #                                    spatial_shapes.prod(1).cumsum(0)[:-1]))
-        
-        
-        
-        # prepare input for decoder
-        bs, _, c = memory.shape
-        query_embed = self.query_pos_embed.weight.unsqueeze(0).tile([bs, 1, 1])
-        tgt = self.tgt_embed.weight.unsqueeze(0).tile([bs, 1, 1])
-        reference_points = F.sigmoid(self.reference_points(query_embed))
-        reference_points_input = reference_points.unsqueeze(
-            2) * valid_ratios.unsqueeze(1)
-        
-        
-        cls_kwargs = dict(src_level_start_index=level_start_index, 
-                          memory_spatial_shapes=spatial_shapes,
-                          reference_points=reference_points_input)
-        obj_kwargs = dict(src_spatial_shapes=spatial_shapes,
-                          src_level_start_index=level_start_index,
-                          src_valid_ratios=valid_ratios)
-        
         outputs, loss_dict = {}, {}
         if self.prompt_indicator is not None:
-            cls_outputs, cls_loss_dict = self.prompt_indicator(memory, mask_flatten, 
-                                                               targets=targets, kwargs=cls_kwargs)
+            cls_outputs, cls_loss_dict = self.prompt_indicator(srcs, mask, targets=targets, kwargs=cls_kwargs)
             outputs.update(cls_outputs)
             loss_dict.update(cls_loss_dict)
             additional_object_inputs = dict(
                 bs_idx = outputs["bs_idx"] if "bs_idx" in outputs else None,
                 cls_idx = outputs["cls_idx"] if "cls_idx" in outputs else None,
-                class_vector = outputs["tgt_class"], # cs_all, d
+                class_vector = outputs["tgt_class"],          # cs_all, d
                 previous_logits = outputs["cls_label_logits"], # bs, 80
             )
         else:
             additional_object_inputs = {}
+            
+            
         
+        # if self.prompt_indicator is not None:
+        #     cls_outputs, cls_loss_dict = self.prompt_indicator(memory, mask_flatten, 
+        #                                                        targets=targets, kwargs=cls_kwargs)
+        #     outputs.update(cls_outputs)
+        #     loss_dict.update(cls_loss_dict)
+        #     additional_object_inputs = dict(
+        #         bs_idx = outputs["bs_idx"] if "bs_idx" in outputs else None,
+        #         cls_idx = outputs["cls_idx"] if "cls_idx" in outputs else None,
+        #         class_vector = outputs["tgt_class"], # cs_all, d
+        #         previous_logits = outputs["cls_label_logits"], # bs, 80
+        #     )
+        # else:
+        #     additional_object_inputs = {}
+        
+        
+    
         # obj_kwargs = {}
         if self.object_decoder is not None:
             obj_outputs, obj_loss_dict = self.object_decoder(memory, mask_flatten, 

@@ -16,6 +16,7 @@ from ppdet.core.workspace import register, serializable
 # from .class_criterion import ClassDecoderCriterion
 from .deformable_transformer import DeformableTransformerDecoderLayer, DeformableTransformerDecoder
 from .asl_losses import AsymmetricLoss, AsymmetricLossOptimized
+from .attention_modules import MultiHeadDecoderLayer as TransformerDecoderLayer
 
 def _get_clones(module, N):
     return nn.LayerList([copy.deepcopy(module) for _ in range(N)])
@@ -228,9 +229,8 @@ class PromptIndicator(nn.Layer):
         self.num_blocks = args.num_blocks
         self.level_preserve = args.level_preserve # only work for DeformableDETR
 
-
-        # prompt_block = TransformerDecoderLayer(args.BLOCK)
-        # self.prompt_blocks = _get_clones(prompt_block, self.num_blocks)
+        prompt_block = TransformerDecoderLayer(args.BLOCK)
+        self.prompt_blocks = _get_clones(prompt_block, self.num_blocks)
         
         hidden_dim = args.BLOCK.hidden_dim
         nhead = args.BLOCK.nheads
@@ -242,13 +242,6 @@ class PromptIndicator(nn.Layer):
         
         weight_attr = None
         bias_attr = None
-        
-        decoder_layer = DeformableTransformerDecoderLayer(
-            hidden_dim, nhead, dim_feedforward, dropout, activation,
-            num_feature_levels, num_decoder_points, weight_attr, bias_attr)
-        # self.prompt_blocks = DeformableTransformerDecoder(
-        #     decoder_layer, self.num_blocks, False)
-        self.prompt_blocks = _get_clones(decoder_layer, self.num_blocks)
         
 
         # For classification
@@ -330,23 +323,18 @@ class PromptIndicator(nn.Layer):
 
         output_label_logits = []
         output_feats = []
-        # memory_spatial_shapes = kwargs["memory_spatial_shapes"]
-        # reference_points = kwargs["reference_points"]
-        memory_spatial_shapes = kwargs.pop("memory_spatial_shapes")
-        reference_points = kwargs.pop("reference_points")
         for lid, layer in enumerate(self.prompt_blocks):
-            # tgt_class = layer(tgt_class, None, None, srcs=srcs, src_padding_masks=mask, **kwargs) # bs, 91, c
-            tgt_class = layer(tgt_class, reference_points, srcs, memory_spatial_shapes, mask, **kwargs) # bs, 91, c
+            tgt_class = layer(tgt_class, None, None, srcs=srcs, src_padding_masks=mask, **kwargs) # bs, 91, c
             label_logits = self.classifier_label[lid](tgt_class, class_vector=origin_class_vector)
             label_logits = label_logits.reshape([bs, -1])
             output_label_logits.append(label_logits)
             output_feats.append(tgt_class)
-
+            
         # organize outputs
         outputs = {
-            'tgt_class': tgt_class,               # bs, k, d
-            'cls_label_logits': label_logits,     # bs, k
-            'cls_output_feats': tgt_class, # bs, k, d
+            'tgt_class': tgt_class,               # bs, cls_k, d
+            'cls_label_logits': label_logits,     # bs, cls_k
+            'cls_output_feats': tgt_class,        # bs, cls_k, d
         }
 
         # select some classes

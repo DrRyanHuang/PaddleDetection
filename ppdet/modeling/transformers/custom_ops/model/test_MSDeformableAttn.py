@@ -2,7 +2,6 @@
 import paddle
 from deformable_detr_ops import ms_deformable_attn # 编译后才可
 
-
 # 构造fake input tensor
 bs, n_heads, c = 2, 8, 8
 query_length, n_levels, n_points = 2, 2, 2
@@ -32,3 +31,5 @@ output = ms_deformable_attn(value,
                             level_start_index,
                             sampling_locations,
                             attention_weights)
+
+print(output.shape)

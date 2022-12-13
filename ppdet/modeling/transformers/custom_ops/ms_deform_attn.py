@@ -19,6 +19,7 @@ import paddle.nn.functional as F
 # from torch.nn.init import xavier_uniform_, constant_
 
 # from ..functions import MSDeformAttnFunction
+from ppdet.modeling.transformers.custom_ops.model import deformable_attention_core_func
 
 
 def _is_power_of_2(n):
@@ -148,7 +149,9 @@ class MSDeformAttn(nn.Layer):
         else:
             raise ValueError(
                 'Last dim of reference_points must be 2 or 4, but get {} instead.'.format(reference_points.shape[-1]))
-        output = MSDeformAttnFunction.apply(
-            value, input_spatial_shapes, input_level_start_index, sampling_locations, attention_weights, self.im2col_step)
+        # output = MSDeformAttnFunction.apply(
+        #     value, input_spatial_shapes, input_level_start_index, sampling_locations, attention_weights, self.im2col_step)
+        output = deformable_attention_core_func(
+            value, input_spatial_shapes, input_level_start_index, sampling_locations, attention_weights)
         output = self.output_proj(output)
         return output

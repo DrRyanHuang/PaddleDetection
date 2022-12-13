@@ -157,7 +157,7 @@ class BasicDecoderLayer(nn.Layer):
 
 class MultiHeadDecoderLayer(BasicDecoderLayer):
     def build_cross_attn(self, args):
-        self.cross_attn = nn.MultiHeadAttention(self.d_model, self.n_heads, dropout=args.dropout)
+        self.cross_attn = torch_nn_MultiHeadAttention(self.d_model, self.n_heads, dropout=args.dropout)
 
     def cross_attn_forward(self, tgt, query_pos, **kwargs):
         # tgt: 
@@ -173,10 +173,18 @@ class MultiHeadDecoderLayer(BasicDecoderLayer):
         src_padding_masks = kwargs.pop("src_padding_masks")
         posemb_2d = kwargs.pop("posemb_2d", 0)
         query_pos = paddle.zeros_like(tgt) if query_pos is None else query_pos.repeat(1,cs,1)
-        tgt2 = self.cross_attn((tgt + query_pos).transpose(0, 1),
-                                (srcs + posemb_2d).reshape(bs, -1, c).transpose(0,1),
-                                srcs.reshape(bs, -1, c).transpose(0, 1), key_padding_mask=src_padding_masks.reshape(bs, -1))[0].transpose(0,1)
-        return tgt2.reshape(bs_all, seq, c)
+        tgt2 = self.cross_attn(
+                # (tgt + query_pos).transpose(0, 1),
+                # (srcs + posemb_2d).reshape([bs, -1, c]).transpose(0,1),
+                # srcs.reshape([bs, -1, c]).transpose(0, 1), 
+                # key_padding_mask=src_padding_masks.reshape([bs, -1])  
+                (tgt + query_pos).transpose([1, 0, 2]),
+                (srcs + posemb_2d).reshape([bs, -1, c]).transpose([1, 0, 2]),
+                srcs.reshape([bs, -1, c]).transpose([1, 0, 2]), 
+                key_padding_mask=src_padding_masks.reshape([bs, -1])   
+        )[0].transpose(0,1)
+        
+        return tgt2.reshape([bs_all, seq, c])
 
     def forward(self, tgt, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
         return super().forward(tgt, query_pos, srcs=srcs, src_padding_masks=src_padding_masks, **kwargs)
