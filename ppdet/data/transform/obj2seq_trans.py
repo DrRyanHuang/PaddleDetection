@@ -33,7 +33,8 @@ class GenerateClassificationResults(object):
         multi_labels = np.unique(image['gt_class'])
         # multi_labels = target["labels"].unique()
         multi_label_onehot = np.zeros((self.num_cats,))
-        multi_label_onehot[multi_labels] = 1
+        if len(multi_labels):
+            multi_label_onehot[multi_labels] = 1
         multi_label_weights = np.ones_like(multi_label_onehot)
 
         # filter crowd items
@@ -60,7 +61,8 @@ class GenerateClassificationResults(object):
         else:
             sample_prob = np.zeros_like(multi_label_onehot) - 1
             # sample_prob[target["labels"].unique()] = 1
-            sample_prob[multi_labels] = 1
+            if len(multi_labels):
+                sample_prob[multi_labels] = 1
         image["multi_label_onehot"] = multi_label_onehot
         image["multi_label_weights"] = multi_label_weights
         image["force_sample_probs"] = sample_prob
