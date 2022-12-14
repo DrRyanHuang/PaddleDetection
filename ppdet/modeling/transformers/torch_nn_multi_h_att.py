@@ -1,7 +1,19 @@
 from typing import Callable, List, Optional, Tuple
 import math
+import paddle
+import paddle.nn as nn
+from paddle.nn import Linear
+from paddle.nn.functional import linear, dropout, softmax
+import warnings
+import numpy as np
 
-def _pad(input: Tensor, pad: List[int], mode: str = "constant", value: float = 0.0) -> paddle.Tensor:
+
+def masked_fill(x, mask, value):
+    y = paddle.full(x.shape, value, x.dtype)
+    return paddle.where(mask.astype(bool), y, x)
+
+
+def _pad(input: paddle.Tensor, pad: List[int], mode: str = "constant", value: float = 0.0) -> paddle.Tensor:
     r"""Pads tensor.
 
     Padding size:
@@ -46,16 +58,16 @@ def _pad(input: Tensor, pad: List[int], mode: str = "constant", value: float = 0
         >>> t4d = torch.empty(3, 3, 4, 2)
         >>> p1d = (1, 1) # pad last dim by 1 on each side
         >>> out = F.pad(t4d, p1d, "constant", 0)  # effectively zero padding
-        >>> print(out.size())
+        >>> print(out.shape)
         torch.Size([3, 3, 4, 4])
         >>> p2d = (1, 1, 2, 2) # pad last dim by (1, 1) and 2nd to last by (2, 2)
         >>> out = F.pad(t4d, p2d, "constant", 0)
-        >>> print(out.size())
+        >>> print(out.shape)
         torch.Size([3, 3, 8, 4])
         >>> t4d = torch.empty(3, 3, 4, 2)
         >>> p3d = (0, 1, 2, 1, 3, 3) # pad by (0, 1), (2, 1), and (3, 3)
         >>> out = F.pad(t4d, p3d, "constant", 0)
-        >>> print(out.size())
+        >>> print(out.shape)
         torch.Size([3, 9, 7, 3])
 
     """
@@ -112,16 +124,16 @@ pad = _pad
 
 
 def _in_projection(
-    q: Tensor,
-    k: Tensor,
-    v: Tensor,
-    w_q: Tensor,
-    w_k: Tensor,
-    w_v: Tensor,
-    b_q: Optional[Tensor] = None,
-    b_k: Optional[Tensor] = None,
-    b_v: Optional[Tensor] = None,
-) -> Tuple[Tensor, Tensor, Tensor]:
+    q: paddle.Tensor,
+    k: paddle.Tensor,
+    v: paddle.Tensor,
+    w_q: paddle.Tensor,
+    w_k: paddle.Tensor,
+    w_v: paddle.Tensor,
+    b_q: Optional[paddle.Tensor] = None,
+    b_k: Optional[paddle.Tensor] = None,
+    b_v: Optional[paddle.Tensor] = None,
+) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
     r"""
     Performs the in-projection step of the attention operation. This is simply
     a triple of linear projections, with shape constraints on the weights which
@@ -154,7 +166,7 @@ def _in_projection(
          - v': :math:`[Vdims..., Eq]`
 
     """
-    Eq, Ek, Ev = q.size(-1), k.size(-1), v.size(-1)
+    Eq, Ek, Ev = q.shape[-1], k.shape[-1], v.shape[-1]
     assert w_q.shape == (Eq, Eq), f"expecting query weights shape of {(Eq, Eq)}, but got {w_q.shape}"
     assert w_k.shape == (Eq, Ek), f"expecting key weights shape of {(Eq, Ek)}, but got {w_k.shape}"
     assert w_v.shape == (Eq, Ev), f"expecting value weights shape of {(Eq, Ev)}, but got {w_v.shape}"
@@ -170,7 +182,7 @@ def _scaled_dot_product_attention(
     v: paddle.Tensor,
     attn_mask: Optional[paddle.Tensor] = None,
     dropout_p: float = 0.0,
-) -> Tuple[Tensor, Tensor]:
+) -> Tuple[paddle.Tensor, paddle.Tensor]:
     r"""
     Computes scaled dot product attention on query, key and value tensors, using
     an optional attention mask if passed, and applying dropout if a probability
@@ -199,14 +211,16 @@ def _scaled_dot_product_attention(
     B, Nt, E = q.shape
     q = q / math.sqrt(E)
     # (B, Nt, E) x (B, E, Ns) -> (B, Nt, Ns)
-    attn = torch.bmm(q, k.transpose(-2, -1))
+    # attn = torch.bmm(q, k.transpose(-2, -1))
+    attn = paddle.bmm(q, k.transpose([0, 2, 1]))
     if attn_mask is not None:
         attn += attn_mask
     attn = softmax(attn, axis=-1)
     if dropout_p > 0.0:
         attn = dropout(attn, p=dropout_p)
     # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
-    output = torch.bmm(attn, v)
+    # output = torch.bmm(attn, v)
+    output = paddle.bmm(attn, v)
     return output, attn
 
 
@@ -215,12 +229,12 @@ def _scaled_dot_product_attention(
 
 
 def _in_projection_packed(
-    q: Tensor,
-    k: Tensor,
-    v: Tensor,
-    w: Tensor,
-    b: Optional[Tensor] = None,
-) -> List[Tensor]:
+    q: paddle.Tensor,
+    k: paddle.Tensor,
+    v: paddle.Tensor,
+    w: paddle.Tensor,
+    b: Optional[paddle.Tensor] = None,
+) -> List[paddle.Tensor]:
     r"""
     Performs the in-projection step of the attention operation, using packed weights.
     Output is a triple containing projection tensors for query, key and value.
@@ -248,11 +262,11 @@ def _in_projection_packed(
         - in output list :math:`[q', k', v']`, each output tensor will have the
             same shape as the corresponding input tensor.
     """
-    E = q.size(-1)
+    E = q.shape[-1]
     if k is v:
         if q is k:
             # self-attention
-            return linear(q, w, b).chunk(3, dim=-1)
+            return linear(q, w, b).chunk(3, axis=-1)
         else:
             # encoder-decoder attention
             w_q, w_kv = w.split([E, E * 2])
@@ -260,7 +274,7 @@ def _in_projection_packed(
                 b_q = b_kv = None
             else:
                 b_q, b_kv = b.split([E, E * 2])
-            return (linear(q, w_q, b_q),) + linear(k, w_kv, b_kv).chunk(2, dim=-1)
+            return (linear(q, w_q, b_q),) + linear(k, w_kv, b_kv).chunk(2, axis=-1)
     else:
         w_q, w_k, w_v = w.chunk(3)
         if b is None:
@@ -272,7 +286,19 @@ def _in_projection_packed(
 
 
 
+# # This class exists solely to avoid triggering an obscure error when scripting
+# # an improperly quantized attention layer. See this issue for details:
+# # https://github.com/pytorch/pytorch/issues/58969
+# # TODO: fail fast on quantization API usage error, then remove this class
+# # and replace uses of it with plain Linear
+# class NonDynamicallyQuantizableLinear(Linear):
+#     def __init__(self, in_features: int, out_features: int, bias: bool = True,
+#                  device=None, dtype=None) -> None:
+#         super().__init__(in_features, out_features, bias=bias,
+#                          device=device, dtype=dtype)
 
+NonDynamicallyQuantizableLinear = Linear
+        
 
 
 
@@ -442,7 +468,7 @@ def multi_head_attention_forward(
             raise RuntimeError(f"attn_mask's dimension {attn_mask.dim()} is not supported")
 
     # prep key padding mask
-    if key_padding_mask is not None and key_padding_mask.dtype == torch.uint8:
+    if key_padding_mask is not None and key_padding_mask.dtype == paddle.uint8:
         warnings.warn("Byte tensor for key_padding_mask in nn.MultiheadAttention is deprecated. Use bool tensor instead.")
         key_padding_mask = key_padding_mask.to(torch.bool)
 
@@ -464,26 +490,26 @@ def multi_head_attention_forward(
     # reshape q, k, v for multihead attention and make em batch first
     #
     # q = q.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
-    q = q.reshape([tgt_len, bsz * num_heads, head_dim]).transpose(0, 1)
+    q = q.reshape([tgt_len, bsz * num_heads, head_dim]).transpose([1, 0, 2])
     if static_k is None:
         # k = k.contiguous().view(k.shape[0], bsz * num_heads, head_dim).transpose(0, 1)
-        k = k.reshape([k.shape[0], bsz * num_heads, head_dim]).transpose(0, 1)
+        k = k.reshape([k.shape[0], bsz * num_heads, head_dim]).transpose([1, 0, 2])
     else:
         # TODO finish disentangling control flow so we don't do in-projections when statics are passed
-        assert static_k.size(0) == bsz * num_heads, \
-            f"expecting static_k.size(0) of {bsz * num_heads}, but got {static_k.size(0)}"
-        assert static_k.size(2) == head_dim, \
-            f"expecting static_k.size(2) of {head_dim}, but got {static_k.size(2)}"
+        assert static_k.shape[0] == bsz * num_heads, \
+            f"expecting static_k.size(0) of {bsz * num_heads}, but got {static_k.shape[0]}"
+        assert static_k.shape[2] == head_dim, \
+            f"expecting static_k.size(2) of {head_dim}, but got {static_k.shape[2]}"
         k = static_k
     if static_v is None:
         # v = v.contiguous().view(v.shape[0], bsz * num_heads, head_dim).transpose(0, 1)
-        v = v.reshape([v.shape[0], bsz * num_heads, head_dim]).transpose(0, 1)
+        v = v.reshape([v.shape[0], bsz * num_heads, head_dim]).transpose([1, 0, 2])
     else:
         # TODO finish disentangling control flow so we don't do in-projections when statics are passed
-        assert static_v.size(0) == bsz * num_heads, \
-            f"expecting static_v.size(0) of {bsz * num_heads}, but got {static_v.size(0)}"
-        assert static_v.size(2) == head_dim, \
-            f"expecting static_v.size(2) of {head_dim}, but got {static_v.size(2)}"
+        assert static_v.shape[0] == bsz * num_heads, \
+            f"expecting static_v.size(0) of {bsz * num_heads}, but got {static_v.shape[0]}"
+        assert static_v.shape[2] == head_dim, \
+            f"expecting static_v.size(2) of {head_dim}, but got {static_v.shape[2]}"
         v = static_v
 
     # add zero attention along batch dimension (now first)
@@ -497,25 +523,34 @@ def multi_head_attention_forward(
             key_padding_mask = pad(key_padding_mask, (0, 1))
 
     # update source sequence length after adjustments
-    src_len = k.size(1)
+    src_len = k.shape[1]
 
     # merge key padding and attention masks
     if key_padding_mask is not None:
-        assert key_padding_mask.shape == (bsz, src_len), \
+        assert key_padding_mask.shape == [bsz, src_len], \
             f"expecting key_padding_mask shape of {(bsz, src_len)}, but got {key_padding_mask.shape}"
-        key_padding_mask = key_padding_mask.view(bsz, 1, 1, src_len).   \
-            expand(-1, num_heads, -1, -1).reshape(bsz * num_heads, 1, src_len)
+        key_padding_mask = key_padding_mask.reshape([bsz, 1, 1, src_len]).   \
+            expand([-1, num_heads, -1, -1]).reshape([bsz * num_heads, 1, src_len])
         if attn_mask is None:
             attn_mask = key_padding_mask
-        elif attn_mask.dtype == torch.bool:
+            # Notice: TODO!
+            attn_mask = 1 - key_padding_mask
+        elif attn_mask.dtype == paddle.bool:
             attn_mask = attn_mask.logical_or(key_padding_mask)
         else:
             attn_mask = attn_mask.masked_fill(key_padding_mask, float("-inf"))
 
     # convert mask to float
-    if attn_mask is not None and attn_mask.dtype == torch.bool:
-        new_attn_mask = torch.zeros_like(attn_mask, dtype=torch.float)
-        new_attn_mask.masked_fill_(attn_mask, float("-inf"))
+    # if attn_mask is not None and attn_mask.dtype == paddle.bool:
+    if attn_mask is not None and \
+        (attn_mask.max().item() < 1 + 10e-5) and \
+        (attn_mask.min().item() > 0 - 10e-5) and \
+        len(paddle.unique(attn_mask.flatten())) == 2:
+            
+        # new_attn_mask = torch.zeros_like(attn_mask, dtype=torch.float)
+        new_attn_mask = paddle.zeros_like(attn_mask, dtype=paddle.float32)
+        # new_attn_mask.masked_fill_(attn_mask, float("-inf"))
+        new_attn_mask = masked_fill(new_attn_mask, attn_mask, float("-inf"))
         attn_mask = new_attn_mask
 
     # adjust dropout probability
@@ -527,12 +562,13 @@ def multi_head_attention_forward(
     #
     attn_output, attn_output_weights = _scaled_dot_product_attention(q, k, v, attn_mask, dropout_p)
     # attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
-    attn_output = attn_output.transpose(0, 1).reshape([tgt_len, bsz, embed_dim])
+    attn_output = attn_output.transpose([1, 0, 2]).reshape([tgt_len, bsz, embed_dim])
     attn_output = linear(attn_output, out_proj_weight, out_proj_bias)
 
     if need_weights:
         # average attention weights over heads
-        attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
+        # attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
+        attn_output_weights = attn_output_weights.reshape([bsz, num_heads, tgt_len, src_len])
         return attn_output, attn_output_weights.sum(axis=1) / num_heads
     else:
         return attn_output, None
@@ -579,7 +615,7 @@ class MultiheadAttention(nn.Layer):
 
     def __init__(self, embed_dim, num_heads, dropout=0., bias=True, add_bias_kv=False, add_zero_attn=False,
                  kdim=None, vdim=None, batch_first=False, device=None, dtype=None) -> None:
-        factory_kwargs = {'device': device, 'dtype': dtype}
+        # factory_kwargs = {'device': device, 'dtype': dtype}
         super(MultiheadAttention, self).__init__()
         self.embed_dim = embed_dim
         self.kdim = kdim if kdim is not None else embed_dim
@@ -593,25 +629,36 @@ class MultiheadAttention(nn.Layer):
         assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
 
         if self._qkv_same_embed_dim is False:
-            self.q_proj_weight = Parameter(torch.empty((embed_dim, embed_dim), **factory_kwargs))
-            self.k_proj_weight = Parameter(torch.empty((embed_dim, self.kdim), **factory_kwargs))
-            self.v_proj_weight = Parameter(torch.empty((embed_dim, self.vdim), **factory_kwargs))
-            self.register_parameter('in_proj_weight', None)
+            pass
+            # self.q_proj_weight = Parameter(torch.empty((embed_dim, embed_dim), **factory_kwargs))
+            # self.k_proj_weight = Parameter(torch.empty((embed_dim, self.kdim), **factory_kwargs))
+            # self.v_proj_weight = Parameter(torch.empty((embed_dim, self.vdim), **factory_kwargs))
+            # self.register_parameter('in_proj_weight', None)
         else:
-            self.in_proj_weight = Parameter(torch.empty((3 * embed_dim, embed_dim), **factory_kwargs))
-            self.register_parameter('q_proj_weight', None)
-            self.register_parameter('k_proj_weight', None)
-            self.register_parameter('v_proj_weight', None)
+            # self.in_proj_weight = Parameter(torch.empty((3 * embed_dim, embed_dim), **factory_kwargs))
+            # self.register_parameter('q_proj_weight', None)
+            # self.register_parameter('k_proj_weight', None)
+            # self.register_parameter('v_proj_weight', None)
+            if dtype is None:
+                dtype = paddle.float32
+            self.in_proj_weight = paddle.create_parameter((3 * embed_dim, embed_dim), dtype)
+            self.q_proj_weight = None
+            self.k_proj_weight = None
+            self.v_proj_weight = None
 
         if bias:
-            self.in_proj_bias = Parameter(torch.empty(3 * embed_dim, **factory_kwargs))
+            # self.in_proj_bias = Parameter(torch.empty(3 * embed_dim, **factory_kwargs))
+            self.in_proj_bias = paddle.create_parameter((3 * embed_dim, ), dtype)
         else:
-            self.register_parameter('in_proj_bias', None)
-        self.out_proj = NonDynamicallyQuantizableLinear(embed_dim, embed_dim, bias=bias, **factory_kwargs)
-
+            # self.register_parameter('in_proj_bias', None)
+            self.in_proj_bias = None
+        # self.out_proj = NonDynamicallyQuantizableLinear(embed_dim, embed_dim, bias=bias, **factory_kwargs)
+        self.out_proj = NonDynamicallyQuantizableLinear(embed_dim, embed_dim, bias_attr=bias)
+        
         if add_bias_kv:
-            self.bias_k = Parameter(torch.empty((1, 1, embed_dim), **factory_kwargs))
-            self.bias_v = Parameter(torch.empty((1, 1, embed_dim), **factory_kwargs))
+            # self.bias_k = Parameter(torch.empty((1, 1, embed_dim), **factory_kwargs))
+            # self.bias_v = Parameter(torch.empty((1, 1, embed_dim), **factory_kwargs))
+            pass
         else:
             self.bias_k = self.bias_v = None
 
@@ -620,6 +667,9 @@ class MultiheadAttention(nn.Layer):
         self._reset_parameters()
 
     def _reset_parameters(self):
+        xavier_uniform_ = nn.initializer.XavierUniform()
+        xavier_normal_  = nn.initializer.XavierNormal()
+        constant_ = nn.initializer.Constant(0.)
         if self._qkv_same_embed_dim:
             xavier_uniform_(self.in_proj_weight)
         else:
@@ -628,8 +678,8 @@ class MultiheadAttention(nn.Layer):
             xavier_uniform_(self.v_proj_weight)
 
         if self.in_proj_bias is not None:
-            constant_(self.in_proj_bias, 0.)
-            constant_(self.out_proj.bias, 0.)
+            constant_(self.in_proj_bias)
+            constant_(self.out_proj.bias)
         if self.bias_k is not None:
             xavier_normal_(self.bias_k)
         if self.bias_v is not None:

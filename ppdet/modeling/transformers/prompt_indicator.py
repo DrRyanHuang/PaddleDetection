@@ -342,7 +342,8 @@ class PromptIndicator(nn.Layer):
             # force_sample_probs = paddle.stack([t["force_sample_probs"] for t in targets]) if self.training else None
             force_sample_probs = targets["force_sample_probs"] if self.training else None
             # num_classes = paddle.concat([t["num_classes"] for t in targets])
-            num_classes = targets["num_classes"]
+            # num_classes = targets["num_classes"]
+            num_classes = paddle.to_tensor([80])
             bs_idxs, cls_idxs = self.retention_policy(label_logits, force_sample_probs, num_classes)    # bs, k'
             return_tgts = tgt_class[bs_idxs, cls_idxs]
             outputs.update({

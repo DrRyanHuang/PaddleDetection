@@ -21,12 +21,11 @@ import paddle.nn.functional as F
 
 # from util.misc import inverse_sigmoid
 
-# from .attention_modules import DeformableDecoderLayer, _get_clones
+from .attention_modules import DeformableDecoderLayer, _get_clones
 # from ..predictors import build_detect_predictor
 from .separate_detect_head import SeparateDetectHead
 from .unified_seq_head import UnifiedSeqHead
-from .deformable_transformer import DeformableTransformerDecoderLayer
-
+# from .deformable_transformer import DeformableTransformerDecoderLayer
 
 def _get_clones(module, N):
     return nn.LayerList([copy.deepcopy(module) for _ in range(N)])
@@ -38,8 +37,6 @@ class ObjectDecoder(nn.Layer):
         self.num_layers = args.num_layers
         self.num_position = args.num_query_position
         self.position_patterns = nn.Embedding(self.num_position, d_model)
-
-        # object_decoder_layer = DeformableTransformerDecoderLayer(args.LAYER)
         
         hidden_dim = args.LAYER.hidden_dim
         nhead = args.LAYER.nheads
@@ -52,10 +49,7 @@ class ObjectDecoder(nn.Layer):
         weight_attr = None
         bias_attr = None
         
-        
-        object_decoder_layer = DeformableTransformerDecoderLayer(
-            hidden_dim, nhead, dim_feedforward, dropout, activation,
-            num_feature_levels, num_decoder_points, weight_attr, bias_attr)
+        object_decoder_layer = DeformableDecoderLayer(args.LAYER)
         self.object_decoder_layers = _get_clones(object_decoder_layer, self.num_layers)
 
         # something else
@@ -135,7 +129,12 @@ class ObjectDecoder(nn.Layer):
 
         loss_dict = {}
         for lid, layer in enumerate(self.object_decoder_layers):
-            tgt_object = layer(tgt_object, reference_points, srcs, kwargs["src_spatial_shapes"], mask, **kwargs)
+            tgt_object = layer(tgt_object, 
+                               query_pos_embed, 
+                               reference_points, 
+                               srcs=srcs, 
+                               src_padding_masks=mask, 
+                               **kwargs)
             if self.training or self.refine_reference_points or lid == self.num_layers - 1:
                 predictor_kwargs["rearrange"] = not self.refine_reference_points
                 # TODO: move arrange into prompt indicator

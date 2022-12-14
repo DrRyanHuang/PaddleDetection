@@ -18,7 +18,7 @@ import paddle.nn.functional as F
 from paddle import nn
 
 from .custom_ops import MSDeformAttn
-
+from .torch_nn_multi_h_att import MultiheadAttention as torch_nn_MultiHeadAttention
 
 class BasicEncoderLayer(nn.Layer):
     def __init__(self, args):
@@ -96,7 +96,8 @@ class BasicDecoderLayer(nn.Layer):
         # self attention
         self.self_attn = not args.no_self_attn
         if self.self_attn:
-            self.self_attn = nn.MultiHeadAttention(self.d_model, self.n_heads, dropout=args.dropout)
+            # self.self_attn = nn.MultiHeadAttention(self.d_model, self.n_heads, dropout=args.dropout)
+            self.self_attn = torch_nn_MultiHeadAttention(self.d_model, self.n_heads, dropout=args.dropout)
             self.dropout2 = nn.Dropout(args.self_attn_dropout)
             self.norm2 = nn.LayerNorm(self.d_model)
 
@@ -114,7 +115,11 @@ class BasicDecoderLayer(nn.Layer):
         else:
             query_pos_self = query_pos
         q = k = self.with_pos_embed(tgt, query_pos_self)
-        tgt2 = self.self_attn(q.transpose(0, 1), k.transpose(0, 1), tgt.transpose(0, 1))[0].transpose(0, 1)
+        # tgt2 = self.self_attn(q.transpose(0, 1), k.transpose(0, 1), tgt.transpose(0, 1))[0].transpose(0, 1)
+        tgt2 = self.self_attn(q.transpose([1, 0, 2]), 
+                              k.transpose([1, 0, 2]), 
+                              tgt.transpose([1, 0, 2]))
+        tgt2 = tgt2[0].transpose([1, 0, 2])
         return tgt2
 
     def forward_post(self, tgt, query_pos, **kwargs):
@@ -182,7 +187,7 @@ class MultiHeadDecoderLayer(BasicDecoderLayer):
                 (srcs + posemb_2d).reshape([bs, -1, c]).transpose([1, 0, 2]),
                 srcs.reshape([bs, -1, c]).transpose([1, 0, 2]), 
                 key_padding_mask=src_padding_masks.reshape([bs, -1])   
-        )[0].transpose(0,1)
+        )[0].transpose([1, 0, 2]) # .transpose(0,1)
         
         return tgt2.reshape([bs_all, seq, c])
 
@@ -214,12 +219,12 @@ class DeformableDecoderLayer(BasicDecoderLayer):
         # reference_points: bs / bs_all, seq, 2 or 4
         src_valid_ratios = kwargs.pop("src_valid_ratios") # bs, level, 2
         if reference_points.shape[-1] == 4:
-            src_valid_ratios = paddle.concat([src_valid_ratios, src_valid_ratios], dim=-1)
+            src_valid_ratios = paddle.concat([src_valid_ratios, src_valid_ratios], axis=-1)
         # if the number of reference_points and number of src_valid_ratios not match.
         # Expand and repeat for them
         if src_valid_ratios.shape[0] != reference_points.shape[0]:
             repeat_times = (reference_points.shape[0] // src_valid_ratios.shape[0])
-            src_valid_ratios = src_valid_ratios.repeat_interleave(repeat_times, dim=0)
+            src_valid_ratios = src_valid_ratios.repeat_interleave(repeat_times, axis=0)
         src_valid_ratios = src_valid_ratios[:, None] if reference_points.dim() == 3 else src_valid_ratios[:, None, None]
         reference_points_input = reference_points[..., None, :] * src_valid_ratios
         return super().forward(tgt, query_pos, reference_points=reference_points_input, srcs=srcs, src_padding_masks=src_padding_masks, **kwargs)

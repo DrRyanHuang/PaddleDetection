@@ -753,41 +753,14 @@ class Obj2SeqDeformableTransformer(nn.Layer):
             )
         else:
             additional_object_inputs = {}
-            
-            
-        
-        # if self.prompt_indicator is not None:
-        #     cls_outputs, cls_loss_dict = self.prompt_indicator(memory, mask_flatten, 
-        #                                                        targets=targets, kwargs=cls_kwargs)
-        #     outputs.update(cls_outputs)
-        #     loss_dict.update(cls_loss_dict)
-        #     additional_object_inputs = dict(
-        #         bs_idx = outputs["bs_idx"] if "bs_idx" in outputs else None,
-        #         cls_idx = outputs["cls_idx"] if "cls_idx" in outputs else None,
-        #         class_vector = outputs["tgt_class"], # cs_all, d
-        #         previous_logits = outputs["cls_label_logits"], # bs, 80
-        #     )
-        # else:
-        #     additional_object_inputs = {}
-        
-        
     
-        # obj_kwargs = {}
         if self.object_decoder is not None:
-            obj_outputs, obj_loss_dict = self.object_decoder(memory, mask_flatten, 
-                                                             targets=targets, 
-                                                             additional_info=additional_object_inputs, 
-                                                             kwargs=obj_kwargs)
+            
+            obj_outputs, obj_loss_dict = self.object_decoder(srcs, mask, targets=targets, additional_info=additional_object_inputs, kwargs=obj_kwargs)
             outputs.update(obj_outputs)
             loss_dict.update(obj_loss_dict)
 
         return outputs, loss_dict
-        
-        # decoder
-        hs = self.decoder(tgt, reference_points_input, memory, spatial_shapes,
-                          mask_flatten, query_embed)
-
-        return (hs, memory, reference_points)
 
 
     def prepare_for_deformable(self, srcs, masks):

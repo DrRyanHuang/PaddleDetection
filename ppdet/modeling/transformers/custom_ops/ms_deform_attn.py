@@ -94,13 +94,14 @@ class MSDeformAttn(nn.Layer):
         N, Len_in, _ = input_flatten.shape
         value = self.value_proj(input_flatten)
         if input_padding_mask is not None:
-            value = value.masked_fill(input_padding_mask[..., None], float(0))
+            # value = value.masked_fill(input_padding_mask[..., None], float(0))
+            value = masked_fill(value, input_padding_mask[..., None], float(0))
         self.value = value.reshape([N, Len_in, self.n_heads, self.d_model // self.n_heads])
         if bs_idx is not None:
             self.value = self.value[bs_idx]
         elif cs_batch is not None:
             self.value = paddle.concat([
-                v.expand(cs ,-1, -1, -1) for cs, v in zip(cs_batch, self.value)
+                v.expand([cs ,-1, -1, -1]) for cs, v in zip(cs_batch, self.value)
             ]) # cs_all, *, *, *
 
     def forward(self, query, reference_points, input_flatten, input_spatial_shapes, input_level_start_index, input_padding_mask=None, cs_batch=None):
@@ -128,7 +129,7 @@ class MSDeformAttn(nn.Layer):
 
             if cs_batch is not None:
                 value = paddle.concat([
-                    v.expand(cs ,-1, -1, -1) for cs, v in zip(cs_batch, value)
+                    v.expand([cs ,-1, -1, -1]) for cs, v in zip(cs_batch, value)
                 ]) # cs_all, *, *, *
                 N = value.shape[0]
         else:
