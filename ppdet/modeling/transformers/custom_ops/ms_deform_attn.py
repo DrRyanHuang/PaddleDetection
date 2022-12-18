@@ -92,10 +92,10 @@ class MSDeformAttn(nn.Layer):
 
     def preprocess_value(self, input_flatten, input_padding_mask=None, cs_batch=None, bs_idx=None):
         N, Len_in, _ = input_flatten.shape
-        value = self.value_proj(input_flatten)
+        value = self.value_proj(input_flatten) # 线性投射层
         if input_padding_mask is not None:
             # value = value.masked_fill(input_padding_mask[..., None], float(0))
-            value = masked_fill(value, input_padding_mask[..., None], float(0))
+            value = masked_fill(value, 1-input_padding_mask[..., None], float(0)) # 反了吗?
         self.value = value.reshape([N, Len_in, self.n_heads, self.d_model // self.n_heads])
         if bs_idx is not None:
             self.value = self.value[bs_idx]

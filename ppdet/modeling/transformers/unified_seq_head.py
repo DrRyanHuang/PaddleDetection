@@ -42,7 +42,7 @@ def unflatten(x, old_axis, new):
 class AbstractClassifier(nn.Layer):
     def __init__(self, kwargs):
         args = Dict(kwargs)
-        super().__init__()
+        super(AbstractClassifier, self).__init__()
         self.num_layers = args.num_layers
         if args.num_layers > 0:
             self.feature_linear = nn.LayerList([nn.Linear(args.hidden_dim, args.hidden_dim) for i in range(args.num_layers)])
@@ -73,13 +73,13 @@ class AbstractClassifier(nn.Layer):
         # class_vector: bs,cs,d
         if self.feature_linear is not None:
             skip = x
-            for i in range(self.num_layers):
+            for i in range(self.num_layers): # 中间 relu
                 x = F.relu(self.feature_linear[i](x)) if i < self.num_layers - 1 else self.feature_linear[i](x)
             if self.skip_and_init:
                 x = skip + x
         new_feat = x
         assert x.dim() == 3
-        W = self.getClassifierWeight(class_vector, cls_idx) # W: csall*d
+        W = self.getClassifierWeight(class_vector, cls_idx) # W: csall * d # class_vector 缩放了
 
         sim = (x * W).sum(-1) # bs*cs*nobj
         if True:
@@ -93,16 +93,13 @@ class DictClassifier(AbstractClassifier):
     # output = paddle.einsum('ijk,zjk->ij', x, self.W)
     # or output = paddle.einsum('ijk,jk->ij', x, self.W[0])
     def __init__(self, args):
-        super().__init__(args)
+        super(DictClassifier, self).__init__(args)
         self.scale = args.hidden_dim ** -0.5
 
     def getClassifierWeight(self, class_vector=None, cls_idx=None):
-        # class_vector: bs,cs,d
-        W = class_vector * self.scale
+        # class_vector: bs, cs, d
+        W = class_vector * self.scale # 为啥缩放呢, 实际上就是除以  `/ sqrt(hidden_dim)`
         return W
-
-
-
 
 
 
@@ -158,191 +155,6 @@ def update_reference_points_xy(output_signals, reference_points, id_step):
         return reference_points
 
 
-# def _get_activation_fn(activation):
-#     """Return an activation function given a string"""
-#     if activation == "relu":
-#         return F.relu
-#     if activation == "gelu":
-#         return F.gelu
-#     if activation == "glu":
-#         return F.glu
-#     if activation == "prelu":
-#         return F.prelu
-#     raise RuntimeError(F"activation should be relu/gelu, not {activation}.")
-
-
-
-# class FFN(nn.Layer):
-
-#     def __init__(self, d_model=256, d_ffn=1024, dropout=0., activation='relu', normalize_before=False):
-#         super(FFN, self).__init__()
-#         self.linear1 = nn.Linear(d_model, d_ffn)
-#         self.activation = _get_activation_fn(activation)
-#         self.dropout2 = nn.Dropout(dropout)
-#         self.linear2 = nn.Linear(d_ffn, d_model)
-#         self.dropout3 = nn.Dropout(dropout)
-#         self.norm2 = nn.LayerNorm(d_model)
-#         self.normalize_before = normalize_before
-
-#     def forward_post(self, src):
-#         src2 = self.linear2(self.dropout2(self.activation(self.linear1(src))))
-#         src = src + self.dropout3(src2)
-#         src = self.norm2(src)
-#         return src
-
-#     def forward_pre(self, src):
-#         src2 = self.norm2(src)
-#         src2 = self.linear2(self.dropout2(self.activation(self.linear1(src2))))
-#         src = src + self.dropout3(src2)
-#         return src
-
-#     def forward(self, src):
-#         if self.normalize_before:
-#             return self.forward_pre(src)
-#         return self.forward_post(src)
-
-
-
-
-
-
-# def _is_power_of_2(n):
-#     if (not isinstance(n, int)) or (n < 0):
-#         raise ValueError("invalid input for _is_power_of_2: {} (type: {})".format(n, type(n)))
-#     return (n & (n-1) == 0) and n != 0
-
-
-# class MSDeformAttn(nn.Layer):
-#     def __init__(self, d_model=256, n_levels=4, n_heads=8, n_points=4, no_value_proj=False):
-#         """
-#         Multi-Scale Deformable Attention Module
-#         :param d_model      hidden dimension
-#         :param n_levels     number of feature levels
-#         :param n_heads      number of attention heads
-#         :param n_points     number of sampling points per attention head per feature level
-#         """
-        
-#         super(MSDeformAttn, self).__init__()
-        
-#         if d_model % n_heads != 0:
-#             raise ValueError('d_model must be divisible by n_heads, but got {} and {}'.format(d_model, n_heads))
-#         _d_per_head = d_model // n_heads
-#         # you'd better set _d_per_head to a power of 2 which is more efficient in our CUDA implementation
-#         if not _is_power_of_2(_d_per_head):
-#             warnings.warn("You'd better set d_model in MSDeformAttn to make the dimension of each attention head a power of 2 "
-#                           "which is more efficient in our CUDA implementation.")
-
-#         self.im2col_step = 64
-
-#         self.d_model = d_model
-#         self.n_levels = n_levels
-#         self.n_heads = n_heads
-#         self.n_points = n_points
-
-#         self.sampling_offsets = nn.Linear(d_model, n_heads * n_levels * n_points * 2)
-#         self.attention_weights = nn.Linear(d_model, n_heads * n_levels * n_points)
-#         self.no_value_proj = no_value_proj
-#         self.value_proj = nn.Identity() if no_value_proj else nn.Linear(d_model, d_model)
-#         self.output_proj = nn.Linear(d_model, d_model)
-#         self.value = None
-
-
-#         self.constant_ = nn.initializer.Constant(0)
-#         self.xavier_uniform_ = nn.initializer.XavierNormal()
-#         self.param_assign = lambda x,y : nn.initializer.Assign(x)(y)
-#         self._reset_parameters()
-
-#     def _reset_parameters(self):
-#         self.constant_(self.sampling_offsets.weight)
-#         thetas = paddle.arange(self.n_heads, dtype="float32") * (2.0 * math.pi / self.n_heads)
-#         grid_init = paddle.stack([thetas.cos(), thetas.sin()], -1)
-#         grid_init = (grid_init / grid_init.abs().max(-1, keepdim=True)[0]).reshape([self.n_heads, 1, 1, 2]).tile([1, self.n_levels, self.n_points, 1])
-#         for i in range(self.n_points):
-#             grid_init[:, :, i, :] *= i + 1
-#         with paddle.no_grad():
-#             # self.sampling_offsets.bias = nn.Parameter(grid_init.reshape([-1]))
-#             self.param_assign(grid_init.reshape([-1]), self.sampling_offsets.bias)
-#         self.constant_(self.attention_weights.weight)
-#         self.constant_(self.attention_weights.bias)
-#         if not self.no_value_proj:
-#             self.xavier_uniform_(self.value_proj.weight)
-#             self.constant_(self.value_proj.bias)
-        
-#         self.xavier_uniform_(self.output_proj.weight)
-#         self.constant_(self.output_proj.bias)
-
-#     def preprocess_value(self, input_flatten, input_padding_mask=None, cs_batch=None, bs_idx=None):
-#         N, Len_in, _ = input_flatten.shape
-#         value = self.value_proj(input_flatten)
-#         if input_padding_mask is not None:
-#             # value = value.masked_fill(input_padding_mask[..., None], float(0))
-#             value = masked_fill(value, input_padding_mask[..., None], float(0))
-#         self.value = value.reshape([N, Len_in, self.n_heads, self.d_model // self.n_heads])
-#         if bs_idx is not None:
-#             self.value = self.value[bs_idx]
-#         elif cs_batch is not None:
-#             self.value = paddle.concat([
-#                 v.expand(cs ,-1, -1, -1) for cs, v in zip(cs_batch, self.value)
-#             ]) # cs_all, *, *, *
-
-#     def forward(self, query, reference_points, input_flatten, input_spatial_shapes, input_level_start_index, input_padding_mask=None, cs_batch=None):
-#         """
-#         :param query                       (N, Length_{query}, C)
-#         :param reference_points            (N, Length_{query}, n_levels, 2), range in [0, 1], top-left (0,0), bottom-right (1, 1), including padding area
-#                                         or (N, Length_{query}, n_levels, 4), add additional (w, h) to form reference boxes
-#         :param input_flatten               (N, \sum_{l=0}^{L-1} H_l \cdot W_l, C)
-#         :param input_spatial_shapes        (n_levels, 2), [(H_0, W_0), (H_1, W_1), ..., (H_{L-1}, W_{L-1})]
-#         :param input_level_start_index     (n_levels, ), [0, H_0*W_0, H_0*W_0+H_1*W_1, H_0*W_0+H_1*W_1+H_2*W_2, ..., H_0*W_0+H_1*W_1+...+H_{L-1}*W_{L-1}]
-#         :param input_padding_mask          (N, \sum_{l=0}^{L-1} H_l \cdot W_l), True for padding elements, False for non-padding elements
-
-#         :return output                     (N, Length_{query}, C)
-#         """
-#         N, Len_q, _ = query.shape
-#         if self.value is None:
-#             N, Len_in, _ = input_flatten.shape
-#             assert (input_spatial_shapes[:, 0] * input_spatial_shapes[:, 1]).sum() == Len_in
-
-#             value = self.value_proj(input_flatten)
-#             if input_padding_mask is not None:
-#                 value = value.masked_fill(input_padding_mask[..., None], float(0))
-#             value = value.reshape([N, Len_in, self.n_heads, self.d_model // self.n_heads])
-
-#             if cs_batch is not None:
-#                 value = paddle.concat([
-#                     v.expand(cs ,-1, -1, -1) for cs, v in zip(cs_batch, value)
-#                 ]) # cs_all, *, *, *
-#                 N = value.shape[0]
-#         else:
-#             value = self.value
-#             assert (input_spatial_shapes[:, 0] * input_spatial_shapes[:, 1]).sum() == value.shape[1]
-
-#         sampling_offsets = self.sampling_offsets(query).reshape([N, Len_q, self.n_heads, self.n_levels, self.n_points, 2])
-#         attention_weights = self.attention_weights(query).reshape([N, Len_q, self.n_heads, self.n_levels * self.n_points])
-#         attention_weights = F.softmax(attention_weights, -1).reshape([N, Len_q, self.n_heads, self.n_levels, self.n_points])
-        
-#         # N, Len_q, n_heads, n_levels, n_points, 2
-#         if reference_points.shape[-1] == 2:
-#             offset_normalizer = paddle.stack([input_spatial_shapes[..., 1], input_spatial_shapes[..., 0]], -1)
-#             sampling_locations = reference_points[:, :, None, :, None, :] \
-#                                  + sampling_offsets / offset_normalizer[None, None, None, :, None, :]
-#         elif reference_points.shape[-1] == 4:
-#             sampling_locations = reference_points[:, :, None, :, None, :2] \
-#                                  + sampling_offsets / self.n_points * reference_points[:, :, None, :, None, 2:] * 0.5
-#         else:
-#             raise ValueError(
-#                 'Last dim of reference_points must be 2 or 4, but get {} instead.'.format(reference_points.shape[-1]))
-#         # output = MSDeformAttnFunction.apply(
-#         #     value, input_spatial_shapes, input_level_start_index, sampling_locations, attention_weights, self.im2col_step)
-#         output = deformable_attention_core_func(
-#             value, input_spatial_shapes, sampling_locations, attention_weights)
-#         output = self.output_proj(output)
-#         return output
-
-
-
-
-
-
 class UnifiedSeqHead(DeformableDecoderLayer):
     def __init__(self, args):
         # required keyts:
@@ -356,26 +168,9 @@ class UnifiedSeqHead(DeformableDecoderLayer):
         self.n_heads = args.nheads
         self.normalize_before = args.pre_norm
         
-        
-        # self.cross_attn = MSDeformAttn(self.d_model, 
-        #                                args.n_levels, 
-        #                                args.nheads, 
-        #                                args.n_points, 
-        #                                no_value_proj=args.cross_attn_no_value_proj)
-        # # self.cross_attn = nn.MultiheadAttention(self.d_model, args.nheads, dropout=args.dropout)
-
-        
-        # # ffn
-        # self.ffn = FFN(self.d_model, 
-        #                args.dim_feedforward, 
-        #                args.dropout, 
-        #                args.activation, 
-        #                normalize_before=self.normalize_before)
-
         if args.no_ffn:
             del self.ffn
             self.ffn = nn.Identity()
-        # self.self_attn = True
         if self.self_attn:
             del self.self_attn
             self.self_attn = Attention(self.d_model, self.n_heads, dropout=args.dropout, proj=args.self_attn_proj)
@@ -516,10 +311,20 @@ class UnifiedSeqHead(DeformableDecoderLayer):
         class_vector = kwargs.pop("class_vector", None)
         bs_idx, cls_idx = kwargs.pop("bs_idx", None), kwargs.pop("cls_idx", None)
         if kwargs.pop("rearrange", False):
-            num_steps, cls_idx, feat, class_vector, bs_idx, kwargs["src_valid_ratios"] = self.post_process.taskCategory.arrangeBySteps(cls_idx, feat, class_vector, bs_idx, kwargs["src_valid_ratios"])
+            num_steps, \
+            cls_idx, \
+            feat, \
+            class_vector, \
+            bs_idx, \
+            kwargs["src_valid_ratios"] = self.post_process.taskCategory.arrangeBySteps(cls_idx, 
+                                                                                       feat, 
+                                                                                       class_vector, 
+                                                                                       bs_idx, 
+                                                                                       kwargs["src_valid_ratios"])
         else:
             num_steps = self.post_process.taskCategory.getNumSteps(cls_idx)
-        output_classes = self.classifier(feat, class_vector=class_vector.unsqueeze(1) if class_vector is not None else None)
+        output_classes = self.classifier(feat, 
+                                         class_vector=class_vector.unsqueeze(1) if class_vector is not None else None)
         output_classes = self.postprocess_logits(output_classes, previous_logits, bs_idx, cls_idx)
 
         # prepare for sequence
@@ -527,14 +332,19 @@ class UnifiedSeqHead(DeformableDecoderLayer):
         output_signals = [] # a list of Tensor(cs_all, nobj)
         original_reference_points = reference_points
         self.pre_kv = None
-        self.cross_attn.preprocess_value(srcs, src_padding_masks, bs_idx=bs_idx)
+        self.cross_attn.preprocess_value(srcs, src_padding_masks, bs_idx=bs_idx) # 操作 self.cross_attn.value
         for id_step, output_embed in enumerate(self.output_embeds):
             # forward the features, get output_features
             if self.pos_emb is not None:
                 feat = feat + self.pos_emb.weight[id_step]
             forward_reference_points = reference_points.detach()
-            # output_feat = super().forward(feat, query_pos, forward_reference_points, srcs, src_padding_masks, **kwargs)
-            output_feat = self.super_forward(feat, query_pos, forward_reference_points, srcs, src_padding_masks, **kwargs)
+            output_feat = super().forward(feat, 
+                                          query_pos,  # None
+                                          forward_reference_points, 
+                                          srcs, 
+                                          src_padding_masks, 
+                                          **kwargs)
+            # output_feat = self.super_forward(feat, query_pos, forward_reference_points, srcs, src_padding_masks, **kwargs)
             output_signal = output_embed(output_feat).squeeze(-1)
             output_signals.append(output_signal)
 
@@ -572,6 +382,7 @@ class UnifiedSeqHead(DeformableDecoderLayer):
 
     def postprocess_logits(self, outputs_logits, previous_logits, bs_idx, cls_idx):
         if previous_logits is not None:
+            # 把 previous_logits 的信息拿出来
             previous_logits = previous_logits[bs_idx, cls_idx]
             previous_logits = previous_logits.unsqueeze(-1)
             if self.sg_previous_logits:
@@ -579,9 +390,9 @@ class UnifiedSeqHead(DeformableDecoderLayer):
         if self.combine_method =="none":
             return outputs_logits
         elif self.combine_method == "add":
-            return outputs_logits.sigmoid() + previous_logits.sigmoid()
+            return F.sigmoid(outputs_logits) + F.sigmoid(previous_logits)
         elif self.combine_method == "multiple":
-            return inverse_sigmoid(outputs_logits.sigmoid() * previous_logits.sigmoid())
+            return inverse_sigmoid(F.sigmoid(outputs_logits) * F.sigmoid(previous_logits))
         else:
             raise KeyError
 
@@ -589,12 +400,12 @@ class UnifiedSeqHead(DeformableDecoderLayer):
 class MLP(nn.Layer):
 
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
-        super().__init__()
+        super(MLP, self).__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
         self.layers = nn.LayerList(nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
 
     def forward(self, x):
         for i, layer in enumerate(self.layers):
-            x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
+            x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x) # 中间 relu, 最后输出
         return x

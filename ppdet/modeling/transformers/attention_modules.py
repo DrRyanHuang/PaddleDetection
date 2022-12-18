@@ -226,8 +226,13 @@ class DeformableDecoderLayer(BasicDecoderLayer):
             repeat_times = (reference_points.shape[0] // src_valid_ratios.shape[0])
             src_valid_ratios = src_valid_ratios.repeat_interleave(repeat_times, axis=0)
         src_valid_ratios = src_valid_ratios[:, None] if reference_points.dim() == 3 else src_valid_ratios[:, None, None]
-        reference_points_input = reference_points[..., None, :] * src_valid_ratios
-        return super().forward(tgt, query_pos, reference_points=reference_points_input, srcs=srcs, src_padding_masks=src_padding_masks, **kwargs)
+        reference_points_input = reference_points[..., None, :] * src_valid_ratios # 缩放一下?
+        return super().forward(tgt, 
+                               query_pos, 
+                               reference_points=reference_points_input, 
+                               srcs=srcs, 
+                               src_padding_masks=src_padding_masks, 
+                               **kwargs)
 
 
 class FFN(nn.Layer):

@@ -24,9 +24,9 @@ class TaskCategory():
             t.name: t for t in self.tasks
         }
 
-        num_cats = [it['num_cats'] for it in task_content]
+        num_cats = [it['num_cats'] for it in task_content] # [80]
         currentIndex = 0
-        all_cats = num_cats[0]
+        all_cats = num_cats[0] # 80
         self.id_to_index = []
         for i in range(num_classes):
             if i >= all_cats:
@@ -34,7 +34,7 @@ class TaskCategory():
                 all_cats += num_cats[currentIndex]
             self.id_to_index.append(currentIndex)
         # self.id_to_index = paddle.LongTensor(self.id_to_index)
-        self.id_to_index = np.array(self.id_to_index, dtype=np.int64)
+        self.id_to_index = paddle.to_tensor(self.id_to_index, dtype="int64", place=paddle.CPUPlace()) # why all zero?
 
     def __getitem__(self, tId):
         if isinstance(tId, int):
@@ -51,8 +51,7 @@ class TaskCategory():
         """
         taskIndexes = self.id_to_index[cls_idx] # cs_all
         tasks = {}
-        # for taskIdx in taskIndexes.unique():
-        for taskIdx in np.unique(taskIndexes):
+        for taskIdx in taskIndexes.unique():
             tasks[taskIdx.item()] = {
                 "indexes": (taskIndexes == taskIdx),
                 "cls_idx": cls_idx[taskIndexes == taskIdx],
@@ -62,11 +61,11 @@ class TaskCategory():
 
     def arrangeBySteps(self, cls_idx, *args):
         tIds = [self.id_to_index[ic] for ic in cls_idx]
-        nSteps = paddle.to_tensor([self.tasks[tId].num_steps for tId in tIds])
-        nSteps, indices = nSteps.sort(descending=True), nSteps.argsort(descending=True)
+        nSteps = paddle.to_tensor([self.tasks[tId].num_steps for tId in tIds], place=paddle.CPUPlace())
+        nSteps, indices = nSteps.sort(descending=True).cpu(), nSteps.argsort(descending=True).cpu()
         return (nSteps, cls_idx[indices], *[a[indices] if a is not None else None for a in args])
 
     def getNumSteps(self, cls_idx, *args):
         tIds = [self.id_to_index[ic] for ic in cls_idx]
-        nSteps = paddle.to_tensor([self.tasks[tId].num_steps for tId in tIds])
+        nSteps = paddle.to_tensor([self.tasks[tId].num_steps for tId in tIds], place=paddle.CPUPlace())
         return nSteps

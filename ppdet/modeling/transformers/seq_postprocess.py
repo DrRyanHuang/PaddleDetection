@@ -24,7 +24,7 @@ def inverse_sigmoid(x, eps=1e-5):
 
 class DetPoseProcess(nn.Layer):
     def __init__(self, args):
-        super().__init__()
+        super(DetPoseProcess, self).__init__()
         self.taskCategory = TaskCategory(args.task_category, args.num_classes)
         self.postprocessors = {
             "detection": self.post_process_detection,
@@ -42,16 +42,17 @@ class DetPoseProcess(nn.Layer):
             cls_idx: Tensor( cs_all )
         """
         cs_all, nobj = pred_logits.shape
-        if cls_idx is None:
-            # assert cs == 1, "Only 1 class is supported without class indexes."
-            bs_idx = paddle.arange(bs)
-            cls_idx = paddle.zeros(bs, dtype=paddle.long)
+        # if cls_idx is None:
+        #     # assert cs == 1, "Only 1 class is supported without class indexes."
+        #     bs_idx = paddle.arange(bs)
+        #     cls_idx = paddle.zeros(bs, dtype=paddle.long)
         taskInfos = self.rearrange_by_task(signals, reference_points, bs_idx, cls_idx)
         outputs = {}
         for tId in taskInfos:
             tName = self.taskCategory.tasks[tId].name
             taskInfo = taskInfos[tId]
-            output_per_task = self.postprocessors[tName](taskInfo["feats"], taskInfo["reference_points"])
+            output_per_task = self.postprocessors[tName](taskInfo["feats"], 
+                                                         taskInfo["reference_points"])
             output_per_task.update({
                 "pred_logits": pred_logits[taskInfo["indexes"]],
                 "class_index": taskInfo["cls_idx"],
@@ -81,6 +82,7 @@ class DetPoseProcess(nn.Layer):
                 outputs[key] = output_per_task[key]
         return outputs
 
+    # 一般目标检测后处理
     def post_process_detection(self, signals, reference_points):
         reference = inverse_sigmoid(reference_points) # bs, cs, nobj, 2
         signals[..., :reference.shape[-1]] += reference
@@ -88,6 +90,7 @@ class DetPoseProcess(nn.Layer):
         boxes = F.sigmoid(signals[..., :4])
         return {"pred_boxes": boxes}
 
+    # pose检测后处理
     def post_process_pose(self, signals, reference_points):
         cs_all, nobj, _ = reference_points.shape
         reference = inverse_sigmoid(reference_points) # bs, cs, nobj, 2

@@ -15,7 +15,9 @@ import paddle
 import paddle.nn.functional as F
 from paddle import nn
 
-from .unified_matcher import build_matcher
+from .unified_matcher import HungarianMatcher
+# from .unified_matcher import build_matcher
+
 # from .losses import sigmoid_focal_loss
 # from util import box_ops
 # from util.misc import (nested_tensor_from_tensor_list, interpolate,
@@ -84,7 +86,7 @@ class UnifiedSingleClassCriterion(nn.Layer):
             args.bce_negative_weight
         """
         super().__init__()
-        self.matcher = build_matcher(args.MATCHER)
+        self.matcher = HungarianMatcher(args.MATCHER)
         self.focal_alpha = args.focal_alpha
         # weight dict
         all_weight_dict = {
@@ -220,11 +222,11 @@ class UnifiedSingleClassCriterion(nn.Layer):
         src_idx = paddle.concat([src for (src, _) in indices])
         return batch_idx, src_idx
 
-    def _get_tgt_permutation_idx(self, indices):
-        # permute targets following indices
-        batch_idx = paddle.cat([paddle.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)])
-        tgt_idx = paddle.cat([tgt for (_, tgt) in indices])
-        return batch_idx, tgt_idx
+    # def _get_tgt_permutation_idx(self, indices):
+    #     # permute targets following indices
+    #     batch_idx = paddle.concat([paddle.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)])
+    #     tgt_idx = paddle.concat([tgt for (_, tgt) in indices])
+    #     return batch_idx, tgt_idx
 
     def get_loss(self, loss, outputs, targets, indices):
         loss_map = {

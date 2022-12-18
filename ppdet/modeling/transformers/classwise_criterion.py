@@ -27,10 +27,10 @@ def get_world_size():
 
 class ClasswiseCriterion(nn.Layer):
     def __init__(self, args):
-        super().__init__()
+        super(ClasswiseCriterion, self).__init__()
         self.set_criterion = UnifiedSingleClassCriterion(args)
         self.taskCategory = TaskCategory(args.task_category, args.num_classes)
-        self.need_keypoints = "pose" in [it.name for it in self.taskCategory.tasks]
+        self.need_keypoints = "pose" in [it.name for it in self.taskCategory.tasks] # False
 
     def forward(self, outputs, targets):
         # outputs: Dict{}
@@ -46,8 +46,8 @@ class ClasswiseCriterion(nn.Layer):
             device = None
             cs_all, num_obj = output['pred_logits'].shape
             num_boxes = self.get_num_boxes(targets, device)
-            num_pts = self.get_num_pts(targets, device) if self.need_keypoints else 1
-            num_people = self.get_num_people(targets, device) if self.need_keypoints else 1
+            num_pts = self.get_num_pts(targets, device) if self.need_keypoints else 1.0
+            num_people = self.get_num_people(targets, device) if self.need_keypoints else 1.0
             bs_idx, cls_idx = output["batch_index"], output["class_index"] # cs_all
 
             task_info = self.taskCategory[tKey]
@@ -94,7 +94,7 @@ class ClasswiseCriterion(nn.Layer):
         num_boxes = paddle.clip(num_boxes / get_world_size(), min=1).item()
         return num_boxes
 
-    def get_num_pts(self, targets, device=None):
+    def get_num_pts(self, targets, device=None): # 检测没有 keypoints
         kps = [t[0]["keypoints"] for t in targets if 0 in t]
         if len(kps) > 0:
             kps = paddle.cat(kps, dim=0)

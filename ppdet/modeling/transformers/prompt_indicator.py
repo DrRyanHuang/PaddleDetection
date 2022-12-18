@@ -25,7 +25,7 @@ def _get_clones(module, N):
 class AbstractClassifier(nn.Layer):
     def __init__(self, kwargs):
         args = Dict(kwargs)
-        super().__init__()
+        super(AbstractClassifier, self).__init__()
         self.num_layers = args.num_layers
         if args.num_layers > 0:
             self.feature_linear = nn.LayerList([nn.Linear(args.hidden_dim, args.hidden_dim) for i in range(args.num_layers)])
@@ -91,7 +91,7 @@ class DictClassifier(AbstractClassifier):
     # output = paddle.einsum('ijk,zjk->ij', x, self.W)
     # or output = paddle.einsum('ijk,jk->ij', x, self.W[0])
     def __init__(self, kwargs):
-        super().__init__(kwargs)
+        super(DictClassifier, self).__init__(kwargs)
         self.scale = kwargs["hidden_dim"] ** -0.5
 
     def getClassifierWeight(self, class_vector=None, cls_idx=None):
@@ -159,7 +159,7 @@ class ClassDecoderCriterion(nn.Layer):
 
 class RetentionPolicy(nn.Layer):
     def __init__(self, args):
-        super().__init__()
+        super(RetentionPolicy, self).__init__()
         """ args: MODEL.PROMPT_INDICATOR.RETENTION_POLICY"""
         # select some class
         self.train_min_classes=args.train_min_classes
@@ -208,14 +208,12 @@ class RetentionPolicy(nn.Layer):
 # @register
 class PromptIndicator(nn.Layer):
     def __init__(self, d_model, args): # MODEL.PROMPT_INDICATOR
-        super().__init__()
+        super(PromptIndicator, self).__init__()
         
         # __inject__ = [
         #     'bbox_post_process',
         #     'mask_post_process',
         # ]
-        
-        # class prompts
         self.d_model = d_model
         
         # if CLASS_PROMPTS is None:

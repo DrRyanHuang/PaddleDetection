@@ -152,7 +152,7 @@ class HungarianMatcher(nn.Layer):
             cost_bbox: This is the relative weight of the L1 error of the bounding box coordinates in the matching cost
             cost_giou: This is the relative weight of the giou loss of the bounding box in the matching cost
         """
-        super().__init__()
+        super(HungarianMatcher, self).__init__()
         self.class_normalization = args.set_class_normalization
         self.box_normalization = args.set_box_normalization
         self.keypoint_normalization = args.set_keypoint_normalization
@@ -261,5 +261,5 @@ class HungarianMatcher(nn.Layer):
             return [(paddle.to_tensor(i, dtype=paddle.int64), paddle.to_tensor(j, dtype=paddle.int64)) for i, j in indices]
 
 
-def build_matcher(args):
-    return HungarianMatcher(args)
+# def build_matcher(args):
+#     return HungarianMatcher(args)

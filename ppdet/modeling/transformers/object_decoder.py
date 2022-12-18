@@ -32,10 +32,10 @@ def _get_clones(module, N):
 
 class ObjectDecoder(nn.Layer):
     def __init__(self, d_model=256, args=None):
-        super().__init__()
+        super(ObjectDecoder, self).__init__()
         self.d_model = d_model
         self.num_layers = args.num_layers
-        self.num_position = args.num_query_position
+        self.num_position = args.num_query_position # 
         self.position_patterns = nn.Embedding(self.num_position, d_model)
         
         hidden_dim = args.LAYER.hidden_dim
@@ -95,20 +95,22 @@ class ObjectDecoder(nn.Layer):
             mask: bs, h, w || bs, l
             pos_emb:
         """
-        class_vector = additional_info.pop("class_vector", None)
-        previous_logits = additional_info.pop("previous_logits", None)
+        class_vector = additional_info.pop("class_vector", None)       # 
+        previous_logits = additional_info.pop("previous_logits", None) # 这是已经分类了嘛?
 
         bs = srcs.shape[0]
         bs_idx = additional_info.pop("bs_idx", paddle.arange(bs))
+        bs_idx = paddle.to_tensor(bs_idx, place=paddle.CPUPlace())
         cls_idx = additional_info.pop("cls_idx", paddle.zeros([bs], dtype=paddle.int64))
+        cls_idx = paddle.to_tensor(cls_idx, place=paddle.CPUPlace())
 
         # modify srcs
         cs_batch = [(bs_idx==i).sum().item() for i in range(bs)]
         cs_all = sum(cs_batch)
         # src is not modified, but in ops
 
-        tgt_object = self.get_object_queries(class_vector, cls_idx, bs_idx)
-        reference_points, query_pos_embed = self.get_reference_points(cs_all)
+        tgt_object = self.get_object_queries(class_vector, cls_idx, bs_idx)   # 加上 position embedding
+        reference_points, query_pos_embed = self.get_reference_points(cs_all) # reference_points是啥?
 
         # modify kwargs
         kwargs["src_valid_ratios"] = paddle.concat([
@@ -130,7 +132,7 @@ class ObjectDecoder(nn.Layer):
         loss_dict = {}
         for lid, layer in enumerate(self.object_decoder_layers):
             tgt_object = layer(tgt_object, 
-                               query_pos_embed, 
+                               query_pos_embed,  # None
                                reference_points, 
                                srcs=srcs, 
                                src_padding_masks=mask, 
@@ -138,7 +140,12 @@ class ObjectDecoder(nn.Layer):
             if self.training or self.refine_reference_points or lid == self.num_layers - 1:
                 predictor_kwargs["rearrange"] = not self.refine_reference_points
                 # TODO: move arrange into prompt indicator
-                layer_outputs, layer_loss = self.detect_head[lid](tgt_object, query_pos_embed, reference_points, srcs=srcs, src_padding_masks=mask, **predictor_kwargs)
+                layer_outputs, layer_loss = self.detect_head[lid](tgt_object, 
+                                                                  query_pos_embed, 
+                                                                  reference_points, 
+                                                                  srcs=srcs, 
+                                                                  src_padding_masks=mask, 
+                                                                  **predictor_kwargs)
                 if self.refine_reference_points:
                     reference_points = layer_outputs["detection"]["pred_boxes"].clone().detach()
                 all_outputs.append(layer_outputs)
@@ -155,7 +162,7 @@ class ObjectDecoder(nn.Layer):
             query_embed = None
         elif self.spatial_prior == "grid":
             nx=ny=round(math.sqrt(self.num_position))
-            self.num_position=nx*ny
+            self.num_position = nx*ny
             x = (paddle.arange(nx) + 0.5) / nx
             y = (paddle.arange(ny) + 0.5) / ny
             xy=paddle.meshgrid(x,y)
@@ -165,7 +172,7 @@ class ObjectDecoder(nn.Layer):
         elif self.spatial_prior == "sigmoid":
             query_embed = self.position.weight.unsqueeze(0).expand([bs, -1, -1])
             # reference_points = self.reference_points(query_embed).sigmoid()
-            reference_points = F.sigmoid(self.reference_points(query_embed))
+            reference_points = F.sigmoid(self.reference_points(query_embed)) # 256 => 2 然后 sigmoid [0, 1]
             if not self.with_query_pos_embed:
                 query_embed = None
         else:
@@ -182,7 +189,7 @@ class ObjectDecoder(nn.Layer):
             tgt_pos = self.position_patterns.weight.reshape([1 , self.num_position, c]).tile([bs*cs, 1, 1])
             tgt_object = tgt_pos + class_vector.reshape([bs*cs, 1, c]) # bs*cs, nobj, c
         elif class_vector.dim() == 2:
-            cs_all, c = class_vector.shape
+            cs_all, c = class_vector.shape  # 20*bs, 256
             tgt_pos = self.position_patterns.weight.reshape([1 , self.num_position, c]).tile([cs_all, 1, 1])
             tgt_object = tgt_pos + class_vector.reshape([cs_all, 1, c]) # cs_all, nobj, c
         return tgt_object

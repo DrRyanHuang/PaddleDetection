@@ -102,43 +102,8 @@ class Obj2Seq(BaseArch):
         body_feats_mask = [F.interpolate(self.inputs['pad_mask'][None], 
                                          size=x.shape[-2:]).squeeze()
                                for x in body_feats]
-        
-        # feats = []
-        # for l, feat in enumerate(body_feats):
-        #     feats.append(self.input_proj[l](feat))
-        # if self.num_feature_levels > len(feats):
-        #     _len_srcs = len(feats)
-        #     for l in range(_len_srcs, self.num_feature_levels):
-        #         if l == _len_srcs:
-        #             src = self.input_proj[l](body_feats[-1])
-        #         else:
-        #             src = self.input_proj[l](feats[-1])
-        #         feats.append(src)
-
-        # Transformer
         out_transformer = self.transformer(body_feats, body_feats_mask, self.inputs)
-
-        
         outputs, loss_dict = out_transformer
-        # losses = sum(loss_dict[k] for k in loss_dict.keys())
-
-        # # reduce losses over all GPUs for logging purposes
-        # loss_dict_reduced = utils.reduce_dict(loss_dict)
-        # loss_dict_reduced = {k: v
-        #                      for k, v in loss_dict_reduced.items()}
-        # losses_reduced = sum(loss_dict_reduced.values())
-
-        # det_loss  = sum(loss_dict_reduced[k] for k in loss_dict_reduced.keys() if 'kps' not in k).item()
-        # loss_value = losses_reduced.item()
-        
-        # # DETR Head
-        # if self.training:
-        #     return self.detr_head(out_transformer, body_feats, self.inputs)
-        # else:
-        #     preds = self.detr_head(out_transformer, body_feats)
-        #     bbox, bbox_num = self.post_process(preds, self.inputs['im_shape'],
-        #                                        self.inputs['scale_factor'])
-        # return bbox, bbox_num
         
         if self.training:
             return loss_dict
