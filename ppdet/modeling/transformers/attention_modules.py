@@ -81,6 +81,8 @@ class DeformableEncoderLayer(BasicEncoderLayer):  # encoder 部分
         return src2
 
 
+
+
 class BasicDecoderLayer(nn.Layer):
     def __init__(self, args):
         super(BasicDecoderLayer, self).__init__()
@@ -160,6 +162,8 @@ class BasicDecoderLayer(nn.Layer):
         return self.forward_post(*args, **kwargs)
 
 
+
+
 class MultiHeadDecoderLayer(BasicDecoderLayer):
     def build_cross_attn(self, args):
         self.cross_attn = torch_nn_MultiHeadAttention(self.d_model, self.n_heads, dropout=args.dropout)
@@ -189,7 +193,7 @@ class MultiHeadDecoderLayer(BasicDecoderLayer):
                 key_padding_mask=src_padding_masks.reshape([bs, -1])   
         )[0].transpose([1, 0, 2]) # .transpose(0,1)
         
-        return tgt2.reshape([bs_all, seq, c])
+        return tgt2
 
     def forward(self, tgt, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
         return super().forward(tgt, query_pos, srcs=srcs, src_padding_masks=src_padding_masks, **kwargs)
@@ -233,6 +237,7 @@ class DeformableDecoderLayer(BasicDecoderLayer):
                                srcs=srcs, 
                                src_padding_masks=src_padding_masks, 
                                **kwargs)
+
 
 
 class FFN(nn.Layer):

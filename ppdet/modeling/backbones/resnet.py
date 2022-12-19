@@ -26,6 +26,7 @@ from paddle.nn.initializer import Constant
 from paddle.vision.ops import DeformConv2D
 from .name_adapter import NameAdapter
 from ..shape_spec import ShapeSpec
+from paddle.jit import to_static
 
 __all__ = ['ResNet', 'Res5Head', 'Blocks', 'BasicBlock', 'BottleNeck']
 
@@ -573,6 +574,7 @@ class ResNet(nn.Layer):
             for i in self.return_idx
         ]
 
+    # @to_static
     def forward(self, inputs):
         x = inputs['image']
         conv1 = self.conv1(x)

@@ -117,7 +117,11 @@ class UnifiedSingleClassCriterion(nn.Layer):
                                             dtype=src_logits.dtype)
         target_classes_onehot[idx] = 1
 
-        loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_boxes=None, alpha=self.focal_alpha, gamma=2) / self.loss_normalization[self.class_normalization]
+        loss_ce = sigmoid_focal_loss(src_logits, 
+                                     target_classes_onehot, 
+                                     num_boxes=None, 
+                                     alpha=self.focal_alpha, 
+                                     gamma=2) / self.loss_normalization[self.class_normalization]
         losses = {'loss_ce': loss_ce}
 
         if False:#log:
@@ -266,12 +270,21 @@ class UnifiedSingleClassCriterion(nn.Layer):
                   keypoints: ngts, 17, 3
         """
 
-        weight_dict = self.build_weight_dict(losses)
+        weight_dict = self.build_weight_dict(losses) # 拿每个 loss 的 weight
         # normalize term
-        self.loss_normalization = {"num_box": num_boxes, "num_pts": num_pts, "num_people": num_people, "mean": outputs["pred_logits"].shape[1], "none": 1}
+        self.loss_normalization = {"num_box": num_boxes, 
+                                   "num_pts": num_pts, 
+                                   "num_people": num_people, 
+                                   "mean": outputs["pred_logits"].shape[1], 
+                                   "none": 1}
 
         # Retrieve the matching between the outputs of the last layer and the targets
-        indices = self.matcher(outputs, targets, weight_dict, num_boxes, num_pts, num_people)
+        indices = self.matcher(outputs, 
+                               targets, 
+                               weight_dict, 
+                               num_boxes, 
+                               num_pts, 
+                               num_people)
 
         # Compute all the requested losses
         loss_dict = {}

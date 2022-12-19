@@ -59,6 +59,13 @@ __all__ = ['Trainer']
 
 MOT_ARCH = ['DeepSORT', 'JDE', 'FairMOT', 'ByteTrack']
 
+def listContent2Tensor(tensor_list):
+    gpu_tensor_list = []
+    for i, cpu_tensor in enumerate(tensor_list):
+        gpu_tensor = paddle.to_tensor(cpu_tensor, place=paddle.CUDAPlace(0))
+        gpu_tensor_list.append( gpu_tensor )
+    del tensor_list
+    return gpu_tensor_list
 
 class Trainer(object):
     def __init__(self, cfg, mode='train'):
@@ -399,7 +406,7 @@ class Trainer(object):
             self.cfg['EvalDataset'] = self.cfg.EvalDataset = create(
                 "EvalDataset")()
 
-        model = self.model
+        model = self.model.to(device='gpu')
         sync_bn = (getattr(self.cfg, 'norm_type', None) == 'sync_bn' and
                    self.cfg.use_gpu and self._nranks > 1)
         if sync_bn:
@@ -456,6 +463,13 @@ class Trainer(object):
                 profiler.add_profiler_step(profiler_options)
                 self._compose_callback.on_step_begin(self.status)
                 data['epoch_id'] = epoch_id
+                
+                # # ------------- data => GPU -------------
+                # data["gt_class"] = listContent2Tensor(data["gt_class"])
+                # data["class_label"] = listContent2Tensor(data["class_label"])  # 这个是 unique
+                # data["gt_bbox"] = listContent2Tensor(data["gt_bbox"])
+                # data["image"] = paddle.to_tensor(data["image"], place=paddle.CUDAPlace(0))
+                # data["pad_mask"] = paddle.to_tensor(data["pad_mask"], place=paddle.CUDAPlace(0))
 
                 if self.use_amp:
                     if isinstance(

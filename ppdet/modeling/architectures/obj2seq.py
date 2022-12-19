@@ -16,11 +16,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import time
+
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 from .meta_arch import BaseArch
 from ppdet.core.workspace import register, create
+from paddle.jit import to_static
+from tqdm import tqdm
 
 __all__ = ['Obj2Seq']
 
@@ -95,13 +99,36 @@ class Obj2Seq(BaseArch):
             # "detr_head": detr_head,
         }
 
+    # @to_static
     def _forward(self):
+        # paddle.device.set_device("gpu")
         # Backbone
         body_feats = self.backbone(self.inputs)
         
-        body_feats_mask = [F.interpolate(self.inputs['pad_mask'][None], 
+        
+        # ------------------ 测试时间 ------------------
+        # import time
+        # s = time.time()
+        # for i in tqdm(range(100)):
+        #     body_feats = self.backbone(self.inputs)
+        # print(time.time() - s)
+        # ------------------ 5s 100次 ------------------
+        
+        # 把最初的 mask 插值为小的, 为了和 torch NestedTensor 对齐, -1
+        body_feats_mask = [1-F.interpolate(self.inputs['pad_mask'][None], 
                                          size=x.shape[-2:]).squeeze()
                                for x in body_feats]
+        
+        # ------------------ 测试时间 ------------------
+        # s = time.time()
+        # for i in tqdm(range(100)):
+        #     body_feats_mask = [F.interpolate(self.inputs['pad_mask'][None], 
+        #                                     size=x.shape[-2:]).squeeze()
+        #                         for x in body_feats] 
+        # print(time.time() - s) 
+        # ------------------ 0.07s 100次 ------------------
+        
+        # ------------------ transformer 测试时间不到 0.5s ------------------
         out_transformer = self.transformer(body_feats, body_feats_mask, self.inputs)
         outputs, loss_dict = out_transformer
         

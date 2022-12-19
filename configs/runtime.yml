@@ -1,6 +1,6 @@
 use_gpu: true
 use_xpu: false
-log_iter: 1
+log_iter: 10
 save_dir: output
 snapshot_epoch: 1
 print_flops: false

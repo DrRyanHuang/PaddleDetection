@@ -19,6 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import time
 import math
 import paddle
 import paddle.nn as nn
@@ -27,6 +28,8 @@ from paddle import ParamAttr
 from addict import Dict
 from yacs.config import CfgNode as CN
 import copy
+from paddle.jit import to_static
+
 
 from ppdet.core.workspace import register
 from ..layers import MultiHeadAttention
@@ -526,10 +529,10 @@ class TransformerEncoder(nn.Layer):
     
     def forward(self, tgt, *args, **kwargs):
         # tgt: bs, h, w, c || bs, l, c
-        for layer in self.encoder_layers:
+        
+        for layer in self.encoder_layers: # 6 个 Deformable Encoder
             tgt = layer(tgt, *args, **kwargs)
         return tgt
-
 
 
 
@@ -685,7 +688,7 @@ class Obj2SeqDeformableTransformer(nn.Layer):
         return {'backbone_num_channels': [i.channels for i in input_shape], }
 
     def _get_valid_ratio(self, mask): # mask 的比例 [bs, ]
-        mask = mask.astype(paddle.float32)
+        mask = 1 - mask.astype(paddle.float32)
         _, H, W = mask.shape
         valid_ratio_h = paddle.sum(mask[:, :, 0], 1) / H
         valid_ratio_w = paddle.sum(mask[:, 0, :], 1) / W
@@ -716,6 +719,7 @@ class Obj2SeqDeformableTransformer(nn.Layer):
         # src_feats: a list of tensors [(bs, c, h_i, w_i), ...]
         # src_mask : a list of tensors [(bs, h_i, w_i), ...]
         
+        
         # ========= 加工变量 srcs 和 masks =========
         srcs =  []
         masks = []
@@ -735,11 +739,15 @@ class Obj2SeqDeformableTransformer(nn.Layer):
                 masks.append(mask)
         # ========= 加工变量 srcs 和 masks =========
         
+        
+        # ---------- 测试时间 1.7s 100次 ----------
         srcs, mask, enc_kwargs, cls_kwargs, obj_kwargs = self.prepare_for_deformable(srcs, masks)
 
-        # encoder
+        # encoder ----- 0.5s -----
         srcs = self.encoder(srcs, padding_mask=mask, **enc_kwargs) if self.encoder is not None else srcs
         
+        
+        # prompt_indicator ----- 0.03s -----
         outputs, loss_dict = {}, {}
         if self.prompt_indicator is not None:
             cls_outputs, cls_loss_dict = self.prompt_indicator(srcs, mask, targets=targets, kwargs=cls_kwargs)
@@ -748,21 +756,30 @@ class Obj2SeqDeformableTransformer(nn.Layer):
             additional_object_inputs = dict(
                 bs_idx = outputs["bs_idx"] if "bs_idx" in outputs else None,
                 cls_idx = outputs["cls_idx"] if "cls_idx" in outputs else None,
-                class_vector = outputs["tgt_class"],          # cs_all, d
+                class_vector = outputs["tgt_class"],           # cs_all, d
                 previous_logits = outputs["cls_label_logits"], # bs, 80
             )
         else:
             additional_object_inputs = {}
-    
+            
+
+
         if self.object_decoder is not None:
             
-            obj_outputs, obj_loss_dict = self.object_decoder(srcs, mask, targets=targets, additional_info=additional_object_inputs, kwargs=obj_kwargs)
+            # ------ object_decoder ------ 约 0.8s 
+            obj_outputs, obj_loss_dict = self.object_decoder(srcs, 
+                                                             mask, 
+                                                             targets=targets, 
+                                                             additional_info=additional_object_inputs, 
+                                                             kwargs=obj_kwargs)
             outputs.update(obj_outputs)
             loss_dict.update(obj_loss_dict)
 
+        
         return outputs, loss_dict
 
 
+    # @to_static
     def prepare_for_deformable(self, srcs, masks):
         
         src_flatten = []

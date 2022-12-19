@@ -124,7 +124,7 @@ class MSDeformAttn(nn.Layer):
             value = self.value_proj(input_flatten)
             if input_padding_mask is not None:
                 # value = value.masked_fill(input_padding_mask[..., None], float(0))
-                value = masked_fill(value, 1-input_padding_mask[..., None], 0.0)
+                value = masked_fill(value, input_padding_mask[..., None], 0.0)
             value = value.reshape([N, Len_in, self.n_heads, self.d_model // self.n_heads])
 
             if cs_batch is not None:

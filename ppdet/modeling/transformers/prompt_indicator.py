@@ -294,7 +294,9 @@ class PromptIndicator(nn.Layer):
         """
         bs = srcs.shape[0]
         # srcs process: only for deformable
-        if len(self.level_preserve) > 0 and 'src_level_start_index' in kwargs:
+        
+        if len(self.level_preserve) > 0 and 'src_level_start_index' in kwargs: # False
+            
             src_level_start_index = kwargs.pop('src_level_start_index')
             num_level = src_level_start_index.shape[0]
             new_srcs, new_mask = [], []
@@ -315,7 +317,7 @@ class PromptIndicator(nn.Layer):
             class_prompts = self.vector_ln(self.convert_vector(self.class_prompts))
         else:
             class_prompts = self.class_prompts
-        tgt_class = class_prompts.unsqueeze(0).tile([bs, 1, 1])
+        tgt_class = class_prompts.unsqueeze(0).tile([bs, 1, 1]) # [bs, 80, d_model]
         origin_class_vector = tgt_class
         # tgt_class: bs, K, d
 

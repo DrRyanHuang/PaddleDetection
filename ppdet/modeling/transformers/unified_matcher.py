@@ -14,26 +14,24 @@
 """
 Modules to compute the matching cost and solve the corresponding LSAP.
 """
+import sys
 import paddle
 from scipy.optimize import linear_sum_assignment
 from paddle import nn
 import paddle.nn.functional as F
 
 import numpy as np
+from paddle.jit import to_static
 # from util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou
 
-
+@to_static
 def paddle_cdist(x, y, p=2):
-    x_len = x.shape[0]
     y_len = y.shape[0]
-
-    out = []
-    for x_ix, x_item in enumerate(x):
-        for y_ix, y_item in enumerate(y):
-            item = paddle.dist(x_item, y_item, p)
-            out.append( item )
-    out = paddle.concat(out)
-    return out.reshape([x_len, y_len])
+    out = paddle.concat(
+        [paddle.linalg.norm(x-y[i], p=p, axis=1, keepdim=True) for i in range(y_len)],
+        axis=1
+    )
+    return out
 
 
 def box_cxcywh_to_xyxy(x):
@@ -87,8 +85,19 @@ def generalized_box_iou(boxes1, boxes2):
     """
     # degenerate boxes gives inf / nan results
     # so do an early check
-    assert (boxes1[:, 2:] >= boxes1[:, :2]).all()
-    assert (boxes2[:, 2:] >= boxes2[:, :2]).all()
+    
+    try:
+        assert (boxes1[:, 2:] >= boxes1[:, :2]).all()
+    except AssertionError:
+        print(boxes1)
+        sys.exit()
+
+    try:
+        assert (boxes2[:, 2:] >= boxes2[:, :2]).all()
+    except AssertionError:
+        print(boxes2)
+        sys.exit()
+        
     iou, union = box_iou(boxes1, boxes2)
 
     lt = paddle.minimum(boxes1[:, None, :2], boxes2[:, :2])
@@ -183,9 +192,14 @@ class HungarianMatcher(nn.Layer):
         with paddle.no_grad():
             bs, num_queries = outputs["pred_logits"].shape[:2]
             # how to normalize loss for both class, box and keypoint
-            NORMALIZER = {"num_box": num_box, "num_pts": num_pts, "num_people": num_people, "mean": num_queries, "none": 1, "box_average": num_box}
+            NORMALIZER = {"num_box": num_box, 
+                          "num_pts": num_pts, 
+                          "num_people": num_people, 
+                          "mean": num_queries, 
+                          "none": 1, 
+                          "box_average": num_box}
             with_boxes = True
-            with_keypoints = "loss_kps_l1" in weight_dict or "loss_oks" in weight_dict
+            with_keypoints = "loss_kps_l1" in weight_dict or "loss_oks" in weight_dict # False
 
             # We flatten to compute the cost matrices in a batch
             out_logit = outputs["pred_logits"].flatten(0, 1) # [batch_size * num_queries]
@@ -197,9 +211,9 @@ class HungarianMatcher(nn.Layer):
 
             # Also concat the target labels and boxes
             # tgt_ids = paddle.cat([v["labels"] for v in targets])
-            tgt_bbox = paddle.concat([v["boxes"] for v in targets])
-            sizes = [t["boxes"].shape[0] for t in targets]
-            num_local = sum(sizes)
+            tgt_bbox = paddle.concat([v["boxes"] for v in targets]) # 目标框位置
+            sizes = [t["boxes"].shape[0] for t in targets]  # 当前 batch[x] 中 bbox 的数量
+            num_local = sum(sizes)                          # 当前 batch 的总 bbox
 
             if num_local == 0:
                 return [(paddle.to_tensor([], dtype=paddle.int64), paddle.to_tensor([], dtype=paddle.int64)) for _ in sizes]
@@ -222,16 +236,16 @@ class HungarianMatcher(nn.Layer):
             if with_boxes:
                 # Compute the L1 cost between boxes
                 # cost_bbox = paddle.cdist(out_bbox, tgt_bbox, p=1) / NORMALIZER[self.box_normalization]
-                cost_bbox = paddle_cdist(out_bbox, tgt_bbox, p=1) / NORMALIZER[self.box_normalization]
+                cost_bbox = paddle_cdist(out_bbox, tgt_bbox, p=1) / NORMALIZER[self.box_normalization] # 计算目标框和预测框的距离
 
                 # Compute the giou cost betwen boxes
                 cost_giou = -generalized_box_iou(box_cxcywh_to_xyxy(out_bbox),
-                                                box_cxcywh_to_xyxy(tgt_bbox)) / NORMALIZER[self.box_normalization]
+                                                 box_cxcywh_to_xyxy(tgt_bbox)) / NORMALIZER[self.box_normalization]
                 # Final cost matrix
                 C_box = weight_dict["loss_bbox"] * cost_bbox + weight_dict["loss_giou"] * cost_giou
                 C = C + C_box
 
-            if with_keypoints:
+            if with_keypoints: # False
                 tgt_kps = paddle.concat([v["keypoints"] for v in targets])# tgt, 17, 3
                 tgt_visible = tgt_kps[..., -1] # tgt, 17
                 tgt_kps = tgt_kps[..., :2] # tgt, 17, 2
@@ -258,7 +272,9 @@ class HungarianMatcher(nn.Layer):
             C = C.reshape([bs, num_queries, -1]).cpu()
 
             indices = [linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))]
-            return [(paddle.to_tensor(i, dtype=paddle.int64), paddle.to_tensor(j, dtype=paddle.int64)) for i, j in indices]
+            return [(paddle.to_tensor(i, dtype=paddle.int64, place=paddle.CPUPlace()), 
+                     paddle.to_tensor(j, dtype=paddle.int64, place=paddle.CPUPlace())) 
+                                                  for i, j in indices]
 
 
 # def build_matcher(args):

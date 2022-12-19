@@ -470,7 +470,7 @@ def multi_head_attention_forward(
     # prep key padding mask
     if key_padding_mask is not None and key_padding_mask.dtype == paddle.uint8:
         warnings.warn("Byte tensor for key_padding_mask in nn.MultiheadAttention is deprecated. Use bool tensor instead.")
-        key_padding_mask = key_padding_mask.to(torch.bool)
+        key_padding_mask = key_padding_mask.to(paddle.bool)
 
     # add bias along batch dimension (currently second)
     if bias_k is not None and bias_v is not None:
@@ -515,8 +515,8 @@ def multi_head_attention_forward(
     # add zero attention along batch dimension (now first)
     if add_zero_attn:
         zero_attn_shape = (bsz * num_heads, 1, head_dim)
-        k = paddle.concat([k, torch.zeros(zero_attn_shape, dtype=k.dtype, device=k.device)], axis=1)
-        v = paddle.concat([v, torch.zeros(zero_attn_shape, dtype=v.dtype, device=v.device)], axis=1)
+        k = paddle.concat([k, paddle.zeros(zero_attn_shape, dtype=k.dtype, device=k.device)], axis=1)
+        v = paddle.concat([v, paddle.zeros(zero_attn_shape, dtype=v.dtype, device=v.device)], axis=1)
         if attn_mask is not None:
             attn_mask = pad(attn_mask, (0, 1))
         if key_padding_mask is not None:
@@ -533,8 +533,8 @@ def multi_head_attention_forward(
             expand([-1, num_heads, -1, -1]).reshape([bsz * num_heads, 1, src_len])
         if attn_mask is None:
             attn_mask = key_padding_mask
-            # Notice: TODO!
-            attn_mask = 1 - key_padding_mask
+            # # Notice: TODO!
+            # attn_mask = 1 - key_padding_mask
         elif attn_mask.dtype == paddle.bool:
             attn_mask = attn_mask.logical_or(key_padding_mask)
         else:

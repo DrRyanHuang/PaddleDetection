@@ -72,10 +72,12 @@ class ClasswiseCriterion(nn.Layer):
                 target.append(tgtThis)
 
             # TODO: form class of the same task into a batch
-            loss_dicts_all.append(self.set_criterion(output, target, task_info.losses, num_boxes, num_pts, num_people))
+            loss_dicts_all.append(
+                self.set_criterion(output, target, task_info.losses, num_boxes, num_pts, num_people)
+            )
 
         loss_dict = {}
-        for idict in loss_dicts_all:
+        for idict in loss_dicts_all: # 更新一下旧的 loss 字典
             for k in idict:
                 if k in loss_dict:
                     loss_dict[k] += idict[k]
@@ -85,7 +87,9 @@ class ClasswiseCriterion(nn.Layer):
 
     def get_num_boxes(self, targets, device=None):
         # Compute the average number of target boxes accross all nodes, for normalization purposes
-        num_boxes = sum(sum(t[key]['boxes'].shape[0] for key in t if isinstance(key, int)) for t in targets)
+        num_boxes = sum(
+                t_bbox.shape[0] for t_bbox in targets['gt_bbox']
+        )
         # num_boxes = paddle.as_tensor([num_boxes], dtype=paddle.float, device=device)
         num_boxes = paddle.to_tensor([num_boxes], dtype=paddle.float32)
         # if is_dist_avail_and_initialized():

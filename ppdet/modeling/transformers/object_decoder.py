@@ -141,7 +141,7 @@ class ObjectDecoder(nn.Layer):
                 predictor_kwargs["rearrange"] = not self.refine_reference_points
                 # TODO: move arrange into prompt indicator
                 layer_outputs, layer_loss = self.detect_head[lid](tgt_object, 
-                                                                  query_pos_embed, 
+                                                                  query_pos_embed,  # None
                                                                   reference_points, 
                                                                   srcs=srcs, 
                                                                   src_padding_masks=mask, 
