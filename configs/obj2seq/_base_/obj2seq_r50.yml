@@ -3,13 +3,11 @@ architecture: Obj2Seq
 hidden_dim: 256
 use_focal_loss: True
 
-
 Obj2Seq:
   backbone: ResNet
   transformer: Obj2SeqDeformableTransformer
   # detr_head: DeformableDETRHead
-  # post_process: DETRBBoxPostProcess
-
+  post_process: Obj2SeqMutiClassPostProcess
 
 ResNet:
   # index 0 stands for res2
@@ -19,14 +17,6 @@ ResNet:
   return_idx: [1, 2, 3]
   lr_mult_list: [0.0, 0.1, 0.1, 0.1]
   num_stages: 4
-
-
-# Obj2SeqTransformer:
-#   position_embed: PositionEmbedding
-
-
-# PositionEmbedding:
-
 
 
 Obj2SeqDeformableTransformer:
@@ -42,22 +32,16 @@ Obj2SeqDeformableTransformer:
   num_feature_levels: 4
   num_encoder_points: 4
   num_decoder_points: 4
-
-
-
 # PromptIndicator:
 #   d_model: 256
 #   num_blocks: 2
 
-
 # DeformableDETRHead:
 #   num_mlp_layers: 3
-
 
 # DETRLoss:
 #   loss_coeff: {class: 2, bbox: 5, giou: 2, mask: 1, dice: 1}
 #   aux_loss: True
-
 
 # HungarianMatcher:
 #   matcher_coeff: {class: 2, bbox: 5, giou: 2}

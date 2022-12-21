@@ -14,12 +14,15 @@ TrainDataset:
     anno_path: annotations/instances_val2017.json
     dataset_dir: dataset/coco/COCO
     data_fields: ['image', 'gt_bbox', 'gt_class', 'is_crowd']
+    sample_num: 4
 
 EvalDataset:
   !COCODataSet
     image_dir: val2017
     anno_path: annotations/instances_val2017.json
     dataset_dir: dataset/coco/COCO
+    data_fields: ['image', 'gt_bbox', 'gt_class', 'is_crowd']
+    sample_num: 4
 
 TestDataset:
   !ImageFolder

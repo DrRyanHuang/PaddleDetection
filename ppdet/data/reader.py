@@ -248,10 +248,11 @@ class EvalReader(BaseDataLoader):
                  shuffle=False,
                  drop_last=True,
                  num_classes=80,
+                 collate_batch=False,
                  **kwargs):
         super(EvalReader, self).__init__(sample_transforms, batch_transforms,
                                          batch_size, shuffle, drop_last,
-                                         num_classes, **kwargs)
+                                         num_classes, collate_batch, **kwargs)
 
 
 @register

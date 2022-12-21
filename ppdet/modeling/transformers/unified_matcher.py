@@ -24,7 +24,7 @@ import numpy as np
 from paddle.jit import to_static
 # from util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou
 
-@to_static
+# @to_static
 def paddle_cdist(x, y, p=2):
     y_len = y.shape[0]
     out = paddle.concat(
@@ -86,17 +86,26 @@ def generalized_box_iou(boxes1, boxes2):
     # degenerate boxes gives inf / nan results
     # so do an early check
     
-    try:
-        assert (boxes1[:, 2:] >= boxes1[:, :2]).all()
-    except AssertionError:
-        print(boxes1)
-        sys.exit()
+    if boxes1.ndim == 1 and boxes1.shape[0] == 4:
+        boxes1 = boxes1[None]
+    if boxes2.ndim == 1 and boxes2.shape[0] == 4:
+        boxes2 = boxes2[None] 
+    
+    assert (boxes1[:, 2:] >= boxes1[:, :2]).all()
+    assert (boxes2[:, 2:] >= boxes2[:, :2]).all()
+        
+    # try:
+    #     assert (boxes1[:, 2:] >= boxes1[:, :2]).all()
+    # except:
+    #     print("boxes1", boxes1)
+    #     sys.exit()
 
-    try:
-        assert (boxes2[:, 2:] >= boxes2[:, :2]).all()
-    except AssertionError:
-        print(boxes2)
-        sys.exit()
+    
+    # try:
+    #     assert (boxes2[:, 2:] >= boxes2[:, :2]).all()
+    # except:
+    #     print("boxes2", boxes2)
+    #     sys.exit()
         
     iou, union = box_iou(boxes1, boxes2)
 
@@ -211,13 +220,20 @@ class HungarianMatcher(nn.Layer):
 
             # Also concat the target labels and boxes
             # tgt_ids = paddle.cat([v["labels"] for v in targets])
-            tgt_bbox = paddle.concat([v["boxes"] for v in targets]) # 目标框位置
+            try:
+                boxes_list = [v["boxes"] for v in targets]    # 此处不可为空
+                tgt_bbox = paddle.concat(boxes_list)          # 目标框位置
+            except:
+                print("len(target) == 0")
+                print(targets)
+                print(outputs)
+            
             sizes = [t["boxes"].shape[0] for t in targets]  # 当前 batch[x] 中 bbox 的数量
             num_local = sum(sizes)                          # 当前 batch 的总 bbox
 
             if num_local == 0:
                 return [(paddle.to_tensor([], dtype=paddle.int64), paddle.to_tensor([], dtype=paddle.int64)) for _ in sizes]
-
+            
             assert ("loss_bce" in weight_dict) ^ ("loss_ce" in weight_dict)
             # Compute the classification cost.
             if "loss_bce" in weight_dict:
