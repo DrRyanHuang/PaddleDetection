@@ -16,6 +16,8 @@ import numpy as np
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle.jit import to_static
+
 from ppdet.core.workspace import register
 from ppdet.modeling.bbox_utils import nonempty_bbox
 from ppdet.modeling.layers import TTFBox
@@ -28,7 +30,7 @@ except Exception:
 __all__ = [
     'BBoxPostProcess', 'MaskPostProcess', 'FCOSPostProcess',
     'JDEBBoxPostProcess', 'CenterNetPostProcess', 'DETRBBoxPostProcess',
-    'SparsePostProcess'
+    'SparsePostProcess', 'Obj2SeqMutiClassPostProcess'
 ]
 
 
@@ -685,3 +687,61 @@ def nms(dets, match_threshold=0.6, match_metric='iou'):
     keep = np.where(suppressed == 0)[0]
     dets = dets[keep, :]
     return dets
+
+
+
+@register
+class Obj2SeqMutiClassPostProcess(nn.Layer):
+    
+    @to_static
+    def box_cxcywh_to_xyxy(self, x):
+        x_c, y_c, w, h = x.unbind(-1)
+        b = [(x_c - 0.5 * w), (y_c - 0.5 * h),
+            (x_c + 0.5 * w), (y_c + 0.5 * h)]
+        return paddle.stack(b, axis=-1)
+
+    
+    @paddle.no_grad()
+    def forward(self, outputs, target_sizes):
+        img_h, img_w = target_sizes.unbind(1)
+        scale_fct = paddle.stack([img_w, img_h, img_w, img_h], axis=1) # bs, 4
+
+        if "detection" in outputs:
+            output = outputs["detection"]
+            bs_idx, cls_idx = output["batch_index"], output["class_index"] # cs_all
+            box_scale = scale_fct[bs_idx] # cs_all, 4
+            all_scores = F.sigmoid(output["pred_logits"])
+            nobj = all_scores.shape[-1]
+            all_boxes = self.box_cxcywh_to_xyxy(output["pred_boxes"]) * box_scale[:, None, :]
+            results_det = []
+            for id_b in bs_idx.unique():
+                out_scores = all_scores[bs_idx == id_b].flatten() # cs_all*nobj
+                out_bbox = all_boxes[bs_idx == id_b].flatten(0, 1)
+                out_labels = output['class_index'][bs_idx == id_b].unsqueeze(-1).expand([-1, nobj]).flatten() # cs_all*nobj
+
+                s, indices = out_scores.sort(descending=True), out_scores.argsort(descending=True)
+                s, indices = s[:100], indices[:100]
+                results_det.append({'scores': s, 'labels': out_labels[indices], 'boxes': out_bbox[indices]})
+            return results_det
+
+        if "pose" in outputs:
+            output = outputs["pose"]
+            bs_idx, cls_idx = output["batch_index"], output["class_index"] # cs_all
+            box_scale = scale_fct[bs_idx] # cs_all, 4
+            all_scores = F.sigmoid(output["pred_logits"])
+            nobj = all_scores.shape[-1]
+            all_keypoints = output["pred_keypoints"] * box_scale[:, None, None, :2]
+            all_keypoints = paddle.concat([all_keypoints, paddle.ones_like(all_keypoints)[..., :1]], axis=-1)
+            all_boxes = self.box_cxcywh_to_xyxy(output["pred_boxes"]) * box_scale[:, None, :]
+            results_det = []
+            for id_b in bs_idx.unique():
+                out_scores = all_scores[bs_idx == id_b].flatten() # cs_all*nobj
+                out_bbox = all_boxes[bs_idx == id_b].flatten(0, 1)
+                out_keypoints = all_keypoints[bs_idx == id_b].flatten(0, 1)
+                out_labels = paddle.zeros_like(out_scores, dtype="int64")
+
+                s, indices = out_scores.sort(descending=True), out_scores.argsort(descending=True)
+                s, indices = s[:100], indices[:100]
+                results_det.append({'scores': s, 
+                                    'labels': out_labels[indices], 'boxes': out_bbox[indices], 'keypoints': out_keypoints[indices]})
+            return results_det

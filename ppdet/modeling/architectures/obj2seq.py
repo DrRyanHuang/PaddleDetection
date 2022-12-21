@@ -45,7 +45,7 @@ class Obj2Seq(BaseArch):
         self.transformer = transformer
         self.detr_head = detr_head
         self.num_feature_levels = num_feature_levels
-        # self.post_process = post_process
+        self.post_process = post_process
         
         # -------------- 在 DETR Transformer 里 --------------
         # hidden_dim = self.transformer.hidden_dim
@@ -135,7 +135,25 @@ class Obj2Seq(BaseArch):
         if self.training:
             return loss_dict
         else:
-            return outputs
+            orig_target_sizes = self.inputs["im_shape"]
+            results = self.post_process(outputs, orig_target_sizes)
+            # res = {tgt.item(): output for tgt, output in zip(self.inputs["im_id"], results)}
+            
+            # num_id, score, xmin, ymin, xmax, ymax
+            bbox = [
+                paddle.concat([
+                    results[i]['labels'][:, None].cast("float32"),
+                    results[i]["scores"][:, None],
+                    results[i]['boxes']
+                ], axis=1)
+                for i in range(len(results))
+            ]
+            bbox = paddle.concat(bbox, axis=0)
+            
+            bbox_num = [results[i]["scores"].shape[0] for i in range(len(results))]
+            bbox_num = paddle.to_tensor(bbox_num, dtype="int32")
+            
+            return bbox, bbox_num
 
 
     def get_loss(self, ):

@@ -56,7 +56,7 @@ class ClasswiseCriterion(nn.Layer):
                 tgtThis = {}
                 id_c = id_c.item()
                 # if id_c in targets[id_b]:
-                if id_c in targets["gt_class"][id_b].numpy().flatten().tolist():
+                if id_c in targets["gt_class"][id_b].unique():
                     id_c_mask =  (targets["gt_class"][id_b].flatten() == id_c)
                     tgtOrigin = {
                         "boxes"  : targets["gt_bbox"][id_b][id_c_mask],
@@ -70,7 +70,7 @@ class ClasswiseCriterion(nn.Layer):
                         default_shape = task_info.required_targets[key]
                         tgtThis[key] = paddle.zeros(default_shape)
                 target.append(tgtThis)
-
+                
             # TODO: form class of the same task into a batch
             loss_dicts_all.append(
                 self.set_criterion(output, target, task_info.losses, num_boxes, num_pts, num_people)
