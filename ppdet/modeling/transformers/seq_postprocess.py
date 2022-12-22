@@ -104,7 +104,3 @@ class DetPoseProcess(nn.Layer):
             "pred_keypoints": outputs_keypoint,
         }
 
-
-# def build_sequence_postprocess(args):
-#     return DetPoseProcess(args)
-    

@@ -11,9 +11,6 @@ import math
 import copy
 
 from ppdet.core.workspace import register, serializable
-# from .attention_modules import MultiHeadDecoderLayer as TransformerDecoderLayer, _get_clones
-# from ..predictors.classifiers import build_label_classifier
-# from .class_criterion import ClassDecoderCriterion
 from .deformable_transformer import DeformableTransformerDecoderLayer, DeformableTransformerDecoder
 from .asl_losses import AsymmetricLoss, AsymmetricLossOptimized
 from .attention_modules import MultiHeadDecoderLayer as TransformerDecoderLayer
@@ -70,20 +67,6 @@ class AbstractClassifier(nn.Layer):
         return sim
 
 
-# class LinearClassifier(AbstractClassifier):
-#     # could be changed to: 
-#     # output = paddle.einsum('ijk,zjk->ij', x, self.W)
-#     # or output = paddle.einsum('ijk,jk->ij', x, self.W[0])
-#     def __init__(self, args):
-#         super().__init__(args)
-
-#         self.hidden_dim = args.hidden_dim
-#         self.W = nn.Parameter(paddle.Tensor(self.hidden_dim))
-#         stdv = 1. / math.sqrt(self.W.size(0))
-#         self.W.data.uniform_(-stdv, stdv)
-
-#     def getClassifierWeight(self, class_vector=None, cls_idx=None):
-#         return self.W
 
 
 class DictClassifier(AbstractClassifier):
@@ -361,6 +344,9 @@ class PromptIndicator(nn.Layer):
         # organize losses
         assert targets is not None
         # targets["cls_class_prompts"] = class_prompts
-        loss_dict = self.criterion(outputs, aux_outputs, targets)
+        if self.training:
+            loss_dict = self.criterion(outputs, aux_outputs, targets)
+        else:
+            loss_dict = {}
 
         return outputs, loss_dict

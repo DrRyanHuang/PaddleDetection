@@ -16,7 +16,7 @@ import math
 import paddle
 from paddle import nn
 import paddle.nn.functional as F
-# from torch.nn.init import xavier_uniform_, constant_
+from paddle.jit import to_static
 
 # from ..functions import MSDeformAttnFunction
 from ppdet.modeling.transformers.custom_ops.model import deformable_attention_core_func
@@ -27,7 +27,7 @@ def _is_power_of_2(n):
         raise ValueError("invalid input for _is_power_of_2: {} (type: {})".format(n, type(n)))
     return (n & (n-1) == 0) and n != 0
 
-
+# @to_static
 def masked_fill(x, mask, value):
     y = paddle.full(x.shape, value, x.dtype)
     return paddle.where(mask, y, x) # 

@@ -9,18 +9,15 @@ from paddle.nn import functional as F
 import math
 import warnings
 from addict import Dict
+from paddle.jit import to_static
 
-# from util.misc import inverse_sigmoid
-# from timm.models.layers import trunc_normal_
-# from .classifiers import build_label_classifier
-# from .seq_postprocess import build_sequence_postprocess
+
 from .seq_postprocess import DetPoseProcess
-# from ..transformer.attention_modules import DeformableDecoderLayer
-# from models.ops.functions import MSDeformAttnFunction
 from .classwise_criterion import ClasswiseCriterion
-from .deformable_transformer import deformable_attention_core_func
 from .attention_modules import DeformableDecoderLayer
 
+
+# @to_static
 def masked_fill(x, mask, value):
     y = paddle.full(x.shape, value, x.dtype)
     return paddle.where(mask, y, x)
@@ -364,7 +361,7 @@ class UnifiedSeqHead(DeformableDecoderLayer):
         outputs = self.post_process(output_signals, output_classes, original_reference_points, bs_idx, cls_idx)
         # prepare targets
         targets = kwargs.pop("targets", None)
-        if targets is not None:
+        if targets is not None and self.training:
             loss_dict = self.criterion(outputs, targets)
         else:
             assert not self.training, "Targets are required for training mode (unified_seq_head.py)"

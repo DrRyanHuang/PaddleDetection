@@ -693,7 +693,7 @@ def nms(dets, match_threshold=0.6, match_metric='iou'):
 @register
 class Obj2SeqMutiClassPostProcess(nn.Layer):
     
-    @to_static
+    # @to_static
     def box_cxcywh_to_xyxy(self, x):
         x_c, y_c, w, h = x.unbind(-1)
         b = [(x_c - 0.5 * w), (y_c - 0.5 * h),

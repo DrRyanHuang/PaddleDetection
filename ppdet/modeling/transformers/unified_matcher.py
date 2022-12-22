@@ -291,7 +291,3 @@ class HungarianMatcher(nn.Layer):
             return [(paddle.to_tensor(i, dtype=paddle.int64, place=paddle.CPUPlace()), 
                      paddle.to_tensor(j, dtype=paddle.int64, place=paddle.CPUPlace())) 
                                                   for i, j in indices]
-
-
-# def build_matcher(args):
-#     return HungarianMatcher(args)

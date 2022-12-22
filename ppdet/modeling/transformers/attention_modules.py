@@ -81,6 +81,7 @@ class DeformableEncoderLayer(BasicEncoderLayer):  # encoder 部分
         return src2
 
 
+# ================================= 以上是 Encoder 以下是 Decoder =================================
 
 
 class BasicDecoderLayer(nn.Layer):

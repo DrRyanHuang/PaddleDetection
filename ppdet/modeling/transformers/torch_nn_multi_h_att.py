@@ -6,8 +6,9 @@ from paddle.nn import Linear
 from paddle.nn.functional import linear, dropout, softmax
 import warnings
 import numpy as np
+from paddle.jit import to_static
 
-
+# @to_static
 def masked_fill(x, mask, value):
     y = paddle.full(x.shape, value, x.dtype)
     return paddle.where(mask.astype(bool), y, x)
