@@ -37,46 +37,13 @@ class Obj2Seq(BaseArch):
     def __init__(self,
                  backbone,
                  transformer,
-                 detr_head=None,
                  post_process=None,
                  num_feature_levels=4):
         super(Obj2Seq, self).__init__()
         self.backbone = backbone
         self.transformer = transformer
-        self.detr_head = detr_head
         self.num_feature_levels = num_feature_levels
         self.post_process = post_process
-        
-        # -------------- 在 DETR Transformer 里 --------------
-        # hidden_dim = self.transformer.hidden_dim
-        
-        # if num_feature_levels > 1:
-        #     num_backbone_outs = len(self.backbone.out_shape)
-        #     self.backbone.num_channels = [self.backbone.out_shape[_].channels for _ in range(num_backbone_outs)]
-        #     input_proj_list = []
-        #     for _ in range(num_backbone_outs):
-        #         in_channels = self.backbone.num_channels[_]
-        #         input_proj_list.append(nn.Sequential(
-        #             nn.Conv2D(in_channels, hidden_dim, kernel_size=1),
-        #             nn.GroupNorm(32, hidden_dim),
-        #         ))
-        #     for _ in range(num_feature_levels - num_backbone_outs):
-        #         input_proj_list.append(nn.Sequential(
-        #             nn.Conv2D(in_channels, hidden_dim, kernel_size=3, stride=2, padding=1),
-        #             nn.GroupNorm(32, hidden_dim),
-        #         ))
-        #         in_channels = hidden_dim
-        #     self.input_proj = nn.LayerList(input_proj_list)
-        # else:
-        #     self.input_proj = nn.LayerList([
-        #         nn.Sequential(
-        #             nn.Conv2D(self.backbone.num_channels[0], hidden_dim, kernel_size=1),
-        #             nn.GroupNorm(32, hidden_dim),
-        #         )])
-
-        # for proj in self.input_proj:
-        #     nn.initializer.XavierNormal()(proj[0].weight)
-        #     nn.initializer.Constant(0)(proj[0].bias)
 
     @classmethod
     def from_config(cls, cfg, *args, **kwargs):
@@ -91,42 +58,23 @@ class Obj2Seq(BaseArch):
             'nhead': transformer.nhead,
             'input_shape': backbone.out_shape
         }
-        # detr_head = create(cfg['detr_head'], **kwargs)
 
         return {
             'backbone': backbone,
             'transformer': transformer,
-            # "detr_head": detr_head,
         }
 
     # @to_static
     def _forward(self):
-        # paddle.device.set_device("gpu")
         # Backbone
         body_feats = self.backbone(self.inputs)
-        
-        
-        # ------------------ 测试时间 ------------------
-        # import time
-        # s = time.time()
-        # for i in tqdm(range(100)):
-        #     body_feats = self.backbone(self.inputs)
-        # print(time.time() - s)
-        # ------------------ 5s 100次 ------------------
+        # print(self.inputs['im_id'])
         
         # 把最初的 mask 插值为小的, 为了和 torch NestedTensor 对齐, -1
         body_feats_mask = [1-F.interpolate(self.inputs['pad_mask'][None], 
                                          size=x.shape[-2:]).squeeze()
                                for x in body_feats]
         
-        # ------------------ 测试时间 ------------------
-        # s = time.time()
-        # for i in tqdm(range(100)):
-        #     body_feats_mask = [F.interpolate(self.inputs['pad_mask'][None], 
-        #                                     size=x.shape[-2:]).squeeze()
-        #                         for x in body_feats] 
-        # print(time.time() - s) 
-        # ------------------ 0.07s 100次 ------------------
         
         # ------------------ transformer 测试时间不到 0.5s ------------------
         out_transformer = self.transformer(body_feats, body_feats_mask, self.inputs)

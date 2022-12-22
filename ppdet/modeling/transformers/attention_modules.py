@@ -114,7 +114,7 @@ class BasicDecoderLayer(nn.Layer):
     def self_attn_forward(self, tgt, query_pos, **kwargs):
         if query_pos is not None and query_pos.shape[0] != tgt.shape[0]:
             cs = tgt.shape[0] // query_pos.shape[0]
-            query_pos_self = query_pos.repeat_interleave(repeats=cs, dim=0)
+            query_pos_self = query_pos.repeat_interleave(repeats=cs, axis=0)
         else:
             query_pos_self = query_pos
         q = k = self.with_pos_embed(tgt, query_pos_self)
@@ -177,7 +177,7 @@ class MultiHeadDecoderLayer(BasicDecoderLayer):
         srcs = kwargs["srcs"]
         bs = srcs.shape[0]
         if bs_all > bs:
-            tgt = tgt.view(bs, -1, c)
+            tgt = tgt.reshape([bs, -1, c])
             cs = bs_all // bs
 
         src_padding_masks = kwargs.pop("src_padding_masks")

@@ -159,7 +159,7 @@ class RetentionPolicy(nn.Layer):
         """ label_logits: bs * K  """
         """ Return:       bs * K' """
         # label_prob = label_logits.sigmoid() # bs, K
-        label_prob = paddle.nn.functional.sigmoid(label_logits)
+        label_prob = F.sigmoid(label_logits)
         if self.training:
             if force_sample_probs is not None:
                 label_prob = paddle.where(force_sample_probs >= 0., x=force_sample_probs.astype("float32"), y=label_prob)
@@ -170,7 +170,7 @@ class RetentionPolicy(nn.Layer):
             min_classes = num_classes.clip(max=self.eval_min_classes) if num_classes is not None else self.eval_min_classes
             max_classes = num_classes.clip(max=self.eval_max_classes) if num_classes is not None else self.eval_max_classes
             class_thr = self.eval_class_thr
-        num_above_thr = (label_prob >= class_thr).sum(axis=1) # bs
+        num_above_thr = (label_prob >= class_thr).sum(axis=1).astype("int32") # bs
         if isinstance(min_classes, paddle.Tensor):
             # num_train = num_above_thr.where(num_above_thr > min_classes, min_classes).where(num_above_thr < max_classes, max_classes)
             num_train = paddle.where(num_above_thr > min_classes, num_above_thr, min_classes)
@@ -250,8 +250,9 @@ class PromptIndicator(nn.Layer):
                 self.register_buffer("class_prompts", class_prompts)
             else:
                 # self.register_parameter("class_prompts", nn.Parameter(class_prompts))
-                self.class_prompts = self.create_tensor(name="class_prompts")
-                paddle.assign(class_prompts, self.class_prompts)
+                self.class_prompts = self.create_parameter(shape=class_prompts.shape)
+                # paddle.assign(class_prompts, self.class_prompts)
+                self.class_prompts.set_value(class_prompts)
         # rand init
         else:
             num_classes = args.num_classes
@@ -324,9 +325,10 @@ class PromptIndicator(nn.Layer):
         if self.retention_policy is not None:
             # force_sample_probs = paddle.stack([t["force_sample_probs"] for t in targets]) if self.training else None
             force_sample_probs = targets["force_sample_probs"] if self.training else None
+            force_sample_probs = force_sample_probs.astype("float32")
             # num_classes = paddle.concat([t["num_classes"] for t in targets])
             # num_classes = targets["num_classes"]
-            num_classes = paddle.to_tensor([80])
+            num_classes = paddle.to_tensor([ force_sample_probs.shape[1] ] * force_sample_probs.shape[0], dtype="int32")
             bs_idxs, cls_idxs = self.retention_policy(label_logits, force_sample_probs, num_classes)    # bs, k'
             return_tgts = tgt_class[bs_idxs, cls_idxs]
             outputs.update({
@@ -335,7 +337,7 @@ class PromptIndicator(nn.Layer):
                 'tgt_class': return_tgts, # cs_all, c
             })
 
-        if len(output_label_logits) > 1:
+        if len(output_label_logits) > 1: # 因为有多个 prompt_blocks
             aux_outputs = [{'cls_label_logits': a}
                            for a in output_label_logits[:-1]]
         else:

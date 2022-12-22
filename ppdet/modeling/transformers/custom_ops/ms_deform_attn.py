@@ -17,6 +17,7 @@ import paddle
 from paddle import nn
 import paddle.nn.functional as F
 from paddle.jit import to_static
+from ...initializer import linear_init_, constant_, xavier_uniform_, normal_
 
 # from ..functions import MSDeformAttnFunction
 from ppdet.modeling.transformers.custom_ops.model import deformable_attention_core_func
@@ -51,7 +52,7 @@ class MSDeformAttn(nn.Layer):
             warnings.warn("You'd better set d_model in MSDeformAttn to make the dimension of each attention head a power of 2 "
                           "which is more efficient in our CUDA implementation.")
 
-        self.im2col_step = 64
+        # self.im2col_step = 64
 
         self.d_model = d_model
         self.n_levels = n_levels
@@ -66,36 +67,47 @@ class MSDeformAttn(nn.Layer):
         self.value = None
 
 
-        self.constant_ = nn.initializer.Constant(0)
-        self.xavier_uniform_ = nn.initializer.XavierNormal()
-        self.param_assign = lambda x,y : nn.initializer.Assign(x)(y)
+        # self.constant_ = nn.initializer.Constant(0)
+        # self.xavier_uniform_ = nn.initializer.XavierNormal()
+        # self.param_assign = lambda x,y : nn.initializer.Assign(x)(y)
         self._reset_parameters()
 
     def _reset_parameters(self):
-        self.constant_(self.sampling_offsets.weight)
+        constant_(self.sampling_offsets.weight)
         thetas = paddle.arange(self.n_heads, dtype="float32") * (2.0 * math.pi / self.n_heads)
-        grid_init = paddle.stack([thetas.cos(), thetas.sin()], -1)
-        grid_init = (grid_init / grid_init.abs().max(-1, keepdim=True)[0]).reshape([self.n_heads, 1, 1, 2]).tile([1, self.n_levels, self.n_points, 1])
-        for i in range(self.n_points):
-            grid_init[:, :, i, :] *= i + 1
-        with paddle.no_grad():
-            # self.sampling_offsets.bias = nn.Parameter(grid_init.reshape([-1]))
-            self.param_assign(grid_init.reshape([-1]), self.sampling_offsets.bias)
-        self.constant_(self.attention_weights.weight)
-        self.constant_(self.attention_weights.bias)
-        if not self.no_value_proj:
-            self.xavier_uniform_(self.value_proj.weight)
-            self.constant_(self.value_proj.bias)
         
-        self.xavier_uniform_(self.output_proj.weight)
-        self.constant_(self.output_proj.bias)
+        # grid_init = paddle.stack([thetas.cos(), thetas.sin()], -1)
+        # grid_init = (grid_init / grid_init.abs().max(-1, keepdim=True)[0]).reshape([self.n_heads, 1, 1, 2]).tile([1, self.n_levels, self.n_points, 1])
+        # for i in range(self.n_points):
+        #     grid_init[:, :, i, :] *= i + 1
+        # with paddle.no_grad():
+        #     # self.sampling_offsets.bias = nn.Parameter(grid_init.reshape([-1]))
+        #     self.param_assign(grid_init.reshape([-1]), self.sampling_offsets.bias)
+        
+        grid_init = paddle.stack([thetas.cos(), thetas.sin()], -1)
+        grid_init = grid_init / grid_init.abs().max(-1, keepdim=True)
+        grid_init = grid_init.reshape([self.n_heads, 1, 1, 2]).tile(
+            [1, self.n_levels, self.n_points, 1])
+        scaling = paddle.arange(
+            1, self.n_points + 1,
+            dtype=paddle.float32).reshape([1, 1, -1, 1])
+        grid_init *= scaling
+        self.sampling_offsets.bias.set_value(grid_init.flatten())
+        
+        constant_(self.attention_weights.weight)
+        constant_(self.attention_weights.bias)
+        if not self.no_value_proj:
+            xavier_uniform_(self.value_proj.weight)
+            constant_(self.value_proj.bias)
+        
+        xavier_uniform_(self.output_proj.weight)
+        constant_(self.output_proj.bias)
 
     def preprocess_value(self, input_flatten, input_padding_mask=None, cs_batch=None, bs_idx=None):
         N, Len_in, _ = input_flatten.shape
         value = self.value_proj(input_flatten) # 线性投射层
         if input_padding_mask is not None:
-            # value = value.masked_fill(input_padding_mask[..., None], float(0))
-            value = masked_fill(value, 1-input_padding_mask[..., None], float(0)) # 反了吗?
+            value = masked_fill(value, input_padding_mask[..., None], float(0)) # 反了吗? # TODO
         self.value = value.reshape([N, Len_in, self.n_heads, self.d_model // self.n_heads])
         if bs_idx is not None:
             self.value = self.value[bs_idx]

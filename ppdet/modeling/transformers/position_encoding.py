@@ -58,6 +58,7 @@ class PositionEmbedding(nn.Layer):
         else:
             raise ValueError(f"not supported {self.embed_type}")
 
+    @paddle.no_grad()
     def forward(self, mask):
         """
         Args:
@@ -66,6 +67,7 @@ class PositionEmbedding(nn.Layer):
             pos (Tensor): [B, C, H, W]
         """
         # assert mask.dtype == paddle.bool
+        # mask = 1 - mask # TODO: paddle mask 与 NestedTensor 相反, 建议在外部使用
         if self.embed_type == 'sine':
             mask = mask.astype('float32')
             y_embed = mask.cumsum(1, dtype='float32')

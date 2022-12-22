@@ -7,6 +7,7 @@ from paddle.nn.functional import linear, dropout, softmax
 import warnings
 import numpy as np
 from paddle.jit import to_static
+from ..initializer import linear_init_, constant_, xavier_uniform_, normal_, xavier_normal_
 
 # @to_static
 def masked_fill(x, mask, value):
@@ -448,7 +449,7 @@ def multi_head_attention_forward(
         q, k, v = _in_projection(query, key, value, q_proj_weight, k_proj_weight, v_proj_weight, b_q, b_k, b_v)
 
     # prep attention mask
-    if attn_mask is not None:
+    if attn_mask is not None: # False
         if attn_mask.dtype == torch.uint8:
             warnings.warn("Byte tensor for attn_mask in nn.MultiheadAttention is deprecated. Use bool tensor instead.")
             attn_mask = attn_mask.to(torch.bool)
@@ -650,6 +651,7 @@ class MultiheadAttention(nn.Layer):
         if bias:
             # self.in_proj_bias = Parameter(torch.empty(3 * embed_dim, **factory_kwargs))
             self.in_proj_bias = paddle.create_parameter((3 * embed_dim, ), dtype)
+            constant_(self.in_proj_bias)
         else:
             # self.register_parameter('in_proj_bias', None)
             self.in_proj_bias = None
@@ -668,9 +670,9 @@ class MultiheadAttention(nn.Layer):
         self._reset_parameters()
 
     def _reset_parameters(self):
-        xavier_uniform_ = nn.initializer.XavierUniform()
-        xavier_normal_  = nn.initializer.XavierNormal()
-        constant_ = nn.initializer.Constant(0.)
+        # xavier_uniform_ = nn.initializer.XavierUniform()
+        # xavier_normal_  = nn.initializer.XavierNormal()
+        # constant_ = nn.initializer.Constant(0.)
         if self._qkv_same_embed_dim:
             xavier_uniform_(self.in_proj_weight)
         else:

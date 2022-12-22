@@ -69,13 +69,13 @@ OBJECT_DECODER.LAYER = copy.deepcopy(BASIC_LAYER_CFG)
 OBJECT_DECODER.num_layers = 4
 OBJECT_DECODER.num_query_position = 100
 OBJECT_DECODER.spatial_prior = 'sigmoid'
-OBJECT_DECODER.refine_reference_points = False
+OBJECT_DECODER.refine_reference_points = False  # add 
 OBJECT_DECODER.with_query_pos_embed = False
 # OUTPUT Layers
 OBJECT_DECODER.HEAD = CN()
-OBJECT_DECODER.HEAD.type = "SeqHead"
+OBJECT_DECODER.HEAD.type = "SeqHead"            # add
 OBJECT_DECODER.HEAD.sg_previous_logits = False
-OBJECT_DECODER.HEAD.combine_method = "none"
+OBJECT_DECODER.HEAD.combine_method = "multiple" # add
 # for sequence head
 OBJECT_DECODER.HEAD.pos_emb = True
 OBJECT_DECODER.HEAD.num_steps = 4
@@ -171,7 +171,7 @@ PROMPT_INDICATOR.BLOCK.no_self_attn = True
 # cfg for prompt vectors
 PROMPT_INDICATOR.CLASS_PROMPTS = CN()
 PROMPT_INDICATOR.CLASS_PROMPTS.num_classes = 80
-PROMPT_INDICATOR.CLASS_PROMPTS.init_vectors = "" # .npy or .pth file, empty means random initialized
+PROMPT_INDICATOR.CLASS_PROMPTS.init_vectors = "configs/obj2seq/word_arrays/coco_clip_v2.npy" # .npy or .pth file, empty means random initialized
 PROMPT_INDICATOR.CLASS_PROMPTS.fix_class_prompts = False
 # cfg for classifier
 PROMPT_INDICATOR.CLASSIFIER = CN()
@@ -236,8 +236,6 @@ class Obj2SeqDeformableTransformer(nn.Layer):
                  dropout=0.1,
                  activation="relu",
                  lr_mult=0.1,
-                 # with_prompt_indicator=True,
-                 # with_object_decoder=True,
                  weight_attr=None,
                  bias_attr=None):
         super(Obj2SeqDeformableTransformer, self).__init__()
@@ -445,8 +443,8 @@ class Obj2SeqDeformableTransformer(nn.Layer):
             spatial_shapes.append([h, w])
             
             if self.encoder is not None:
-                pos_embed = self.position_embedding(mask).flatten(2).transpose([0, 2, 1])
-                lvl_pos_embed = pos_embed + self.level_embed.weight[level].reshape([1, 1, -1])
+                pos_embed = self.position_embedding(1-mask).flatten(2).transpose([0, 2, 1])    # 相对位置 embed
+                lvl_pos_embed = pos_embed + self.level_embed.weight[level].reshape([1, 1, -1]) # 不同尺度的 embed
                 lvl_pos_embed_flatten.append(lvl_pos_embed)
             
             valid_ratios.append(self._get_valid_ratio(mask)) # [bs, h_, w_]

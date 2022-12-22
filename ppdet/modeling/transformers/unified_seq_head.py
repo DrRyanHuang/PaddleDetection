@@ -15,7 +15,7 @@ from paddle.jit import to_static
 from .seq_postprocess import DetPoseProcess
 from .classwise_criterion import ClasswiseCriterion
 from .attention_modules import DeformableDecoderLayer
-
+from ..initializer import linear_init_, constant_, xavier_uniform_, normal_
 
 # @to_static
 def masked_fill(x, mask, value):
@@ -207,13 +207,18 @@ class UnifiedSeqHead(DeformableDecoderLayer):
 
     def reset_parameters_as_first_head(self):
         for i in range(self.num_steps):
-            nn.initializer.Constant(0)(self.output_embeds[i].layers[-1].weight)
-            nn.initializer.Constant(0. if (i < 2 or i >= 4) else -2.0)(self.output_embeds[i].layers[-1].bias)
+            # nn.initializer.Constant(0)(self.output_embeds[i].layers[-1].weight)
+            # nn.initializer.Constant(0. if (i < 2 or i >= 4) else -2.0)(self.output_embeds[i].layers[-1].bias)
+            constant_(self.output_embeds[i].layers[-1].weight)
+            constant_(self.output_embeds[i].layers[-1].bias, 
+                      0. if (i < 2 or i >= 4) else -2.0)
 
     def reset_parameters_as_refine_head(self):
         for i in range(self.num_steps):
-            nn.initializer.Constant(0)(self.output_embeds[i].layers[-1].weight)
-            nn.initializer.Constant(0)(self.output_embeds[i].layers[-1].bias)
+            # nn.initializer.Constant(0)(self.output_embeds[i].layers[-1].weight)
+            # nn.initializer.Constant(0)(self.output_embeds[i].layers[-1].bias)
+            constant_(self.output_embeds[i].layers[-1].weight)
+            constant_(self.output_embeds[i].layers[-1].bias)
 
     def self_attn_forward(self, tgt, query_pos, **kwargs):
         # q = k = self.with_pos_embed(tgt, query_pos_self)
@@ -225,77 +230,77 @@ class UnifiedSeqHead(DeformableDecoderLayer):
     def with_pos_embed(tensor, pos):
         return tensor if pos is None else tensor + pos
     
-    def cross_attn_forward(self, tgt, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
-        # tgt: bs_all, seq, c
-        # src: bs, seq_src, c
-        # reference_points: bs / bs_all, seq, lvl, 2 or 4 (len_pt)
-        bs_all, seq, c = tgt.shape
-        num_levels = reference_points.shape[-2]
-        bs = srcs.shape[0]
-        cs_batch = kwargs.pop("cs_batch", None)
-        src_spatial_shapes = kwargs.pop("src_spatial_shapes")
-        level_start_index = kwargs.pop("src_level_start_index")
+    # def cross_attn_forward(self, tgt, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
+    #     # tgt: bs_all, seq, c
+    #     # src: bs, seq_src, c
+    #     # reference_points: bs / bs_all, seq, lvl, 2 or 4 (len_pt)
+    #     bs_all, seq, c = tgt.shape
+    #     num_levels = reference_points.shape[-2]
+    #     bs = srcs.shape[0]
+    #     cs_batch = kwargs.pop("cs_batch", None)
+    #     src_spatial_shapes = kwargs.pop("src_spatial_shapes")
+    #     level_start_index = kwargs.pop("src_level_start_index")
 
-        tgt2 = self.cross_attn(self.with_pos_embed(tgt, query_pos),
-                               reference_points,
-                               srcs, src_spatial_shapes, level_start_index, src_padding_masks, cs_batch=cs_batch)
-        return tgt2
+    #     tgt2 = self.cross_attn(self.with_pos_embed(tgt, query_pos),
+    #                            reference_points,
+    #                            srcs, src_spatial_shapes, level_start_index, src_padding_masks, cs_batch=cs_batch)
+    #     return tgt2
 
 
-    def forward_post(self, tgt, query_pos, **kwargs):
-        # self attention
-        if self.self_attn:
-            tgt2 = self.self_attn_forward(tgt, query_pos, **kwargs)
-            tgt = tgt + self.dropout2(tgt2)
-            tgt = self.norm2(tgt)
+    # def forward_post(self, tgt, query_pos, **kwargs):
+    #     # self attention
+    #     if self.self_attn:
+    #         tgt2 = self.self_attn_forward(tgt, query_pos, **kwargs)
+    #         tgt = tgt + self.dropout2(tgt2)
+    #         tgt = self.norm2(tgt)
 
-        tgt2 = self.cross_attn_forward(tgt, query_pos, **kwargs)
-        tgt = tgt + self.dropout1(tgt2)
-        tgt = self.norm1(tgt)
+    #     tgt2 = self.cross_attn_forward(tgt, query_pos, **kwargs)
+    #     tgt = tgt + self.dropout1(tgt2)
+    #     tgt = self.norm1(tgt)
 
-        # ffn
-        tgt = self.ffn(tgt)
+    #     # ffn
+    #     tgt = self.ffn(tgt)
 
-        return tgt
+    #     return tgt
     
 
-    def forward_pre(self, tgt, query_pos, **kwargs):
-        # self attention
-        if self.self_attn:
-            tgt2 = self.norm2(tgt)
-            tgt2 = self.self_attn_forward(tgt2, query_pos, **kwargs)
-            tgt = tgt + self.dropout2(tgt2)
+    # def forward_pre(self, tgt, query_pos, **kwargs):
+    #     # self attention
+    #     if self.self_attn:
+    #         tgt2 = self.norm2(tgt)
+    #         tgt2 = self.self_attn_forward(tgt2, query_pos, **kwargs)
+    #         tgt = tgt + self.dropout2(tgt2)
 
-        tgt2 = self.norm1(tgt)
-        tgt2 = self.cross_attn_forward(tgt2, query_pos, **kwargs)
-        tgt = tgt + self.dropout1(tgt2)
+    #     tgt2 = self.norm1(tgt)
+    #     tgt2 = self.cross_attn_forward(tgt2, query_pos, **kwargs)
+    #     tgt = tgt + self.dropout1(tgt2)
 
-        # ffn
-        tgt = self.ffn(tgt)
+    #     # ffn
+    #     tgt = self.ffn(tgt)
 
-        return tgt
+    #     return tgt
     
     
-    def super_super_forward(self, *args, **kwargs):
-        if self.normalize_before:
-            return self.forward_pre(*args, **kwargs)
-        return self.forward_post(*args, **kwargs)
+    # def super_super_forward(self, *args, **kwargs):
+    #     if self.normalize_before:
+    #         return self.forward_pre(*args, **kwargs)
+    #     return self.forward_post(*args, **kwargs)
     
-    def super_forward(self, tgt, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
-        # reference_points: bs / bs_all, seq, 2 or 4
-        src_valid_ratios = kwargs.pop("src_valid_ratios") # bs, level, 2
-        if reference_points.shape[-1] == 4:
-            src_valid_ratios = paddle.concat([src_valid_ratios, src_valid_ratios], axis=-1)
-        # if the number of reference_points and number of src_valid_ratios not match.
-        # Expand and repeat for them
-        if src_valid_ratios.shape[0] != reference_points.shape[0]:
-            repeat_times = (reference_points.shape[0] // src_valid_ratios.shape[0])
-            src_valid_ratios = src_valid_ratios.repeat_interleave(repeat_times, axis=0)
-        src_valid_ratios = src_valid_ratios[:, None] if reference_points.dim() == 3 else src_valid_ratios[:, None, None]
-        reference_points_input = reference_points[..., None, :] * src_valid_ratios
-        return self.super_super_forward(tgt, query_pos, 
-                                        reference_points=reference_points_input, 
-                                        srcs=srcs, src_padding_masks=src_padding_masks, **kwargs)
+    # def super_forward(self, tgt, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
+    #     # reference_points: bs / bs_all, seq, 2 or 4
+    #     src_valid_ratios = kwargs.pop("src_valid_ratios") # bs, level, 2
+    #     if reference_points.shape[-1] == 4:
+    #         src_valid_ratios = paddle.concat([src_valid_ratios, src_valid_ratios], axis=-1)
+    #     # if the number of reference_points and number of src_valid_ratios not match.
+    #     # Expand and repeat for them
+    #     if src_valid_ratios.shape[0] != reference_points.shape[0]:
+    #         repeat_times = (reference_points.shape[0] // src_valid_ratios.shape[0])
+    #         src_valid_ratios = src_valid_ratios.repeat_interleave(repeat_times, axis=0)
+    #     src_valid_ratios = src_valid_ratios[:, None] if reference_points.dim() == 3 else src_valid_ratios[:, None, None]
+    #     reference_points_input = reference_points[..., None, :] * src_valid_ratios
+    #     return self.super_super_forward(tgt, query_pos, 
+    #                                     reference_points=reference_points_input, 
+    #                                     srcs=srcs, src_padding_masks=src_padding_masks, **kwargs)
 
     def forward(self, feat, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
         # feat: cs_all, nobj, c
