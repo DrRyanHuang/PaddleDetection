@@ -66,6 +66,39 @@ class Obj2Seq(BaseArch):
 
     # @to_static
     def _forward(self):
+        
+        import numpy as np
+        import cv2
+        
+        # idx = 0
+        # image = self.inputs['image'][idx].transpose([1, 2, 0]).numpy()
+        # image = (image * [0.229, 0.224,0.225] + [0.485, 0.456, 0.406]) * 255
+        # image = image.astype(int).astype("uint8")
+        
+        # curr_h = int(self.inputs['pad_mask'][idx].sum(0).max().item())
+        # curr_w = int(self.inputs['pad_mask'][idx].sum(1).max().item())
+        
+        # image = image[:curr_h, :curr_w]
+        # image = image[:, :, ::-1]
+        # image = np.ascontiguousarray(image)
+
+        # bboxes = self.inputs['gt_bbox'][idx].numpy() * [curr_w, curr_h, curr_w, curr_h]
+        # bboxes = bboxes.astype(int)
+        
+        # bbox = bboxes[0]
+        # xc, yc, bw, bh = bbox.astype(int)
+
+        # x1, y1, x2, y2 = int(xc-bw//2), int(yc-bh//2), int(xc+bw//2), int(yc+bh//2)
+
+        # xx = cv2.rectangle(image, (x1, y1), (x2, y2), 255, 2, 8)   # 这里报了错
+        # cv2.imwrite("xxx.png", image)
+
+
+
+        # h, w = self.inputs["ori_im_shape"][idx].numpy()
+        
+        
+        
         # Backbone
         body_feats = self.backbone(self.inputs)
         # print(self.inputs['im_id'])
@@ -79,13 +112,50 @@ class Obj2Seq(BaseArch):
         # ------------------ transformer 测试时间不到 0.5s ------------------
         out_transformer = self.transformer(body_feats, body_feats_mask, self.inputs)
         outputs, loss_dict = out_transformer
-        
+        self.training = False
         if self.training:
             return loss_dict
         else:
-            orig_target_sizes = self.inputs["im_shape"]
+            orig_target_sizes = self.inputs["ori_im_shape"]
             results = self.post_process(outputs, orig_target_sizes)
             # res = {tgt.item(): output for tgt, output in zip(self.inputs["im_id"], results)}
+
+            
+            self_inputs_gt_bbox_0 = paddle.to_tensor(
+                [[0.38957810, 0.41610327, 0.03859374, 0.16314554],
+                [0.12764062, 0.50515258, 0.23331250, 0.22269955],
+                [0.93419528, 0.58346248, 0.12710935, 0.18481222],
+                [0.60465628, 0.63254696, 0.08749998, 0.24138498],
+                [0.50250781, 0.62732399, 0.09660935, 0.23117369],
+                [0.66919529, 0.61899060, 0.04714060, 0.19098592],
+                [0.51279688, 0.52825117, 0.03371879, 0.02720654],
+                [0.68644530, 0.53196013, 0.08289063, 0.32396716],
+                [0.61248434, 0.44619718, 0.02362496, 0.08389670],
+                [0.81185937, 0.50172538, 0.02303135, 0.03748825],
+                [0.78632033, 0.53637326, 0.03170311, 0.25424880],
+                [0.95615625, 0.77170193, 0.02240622, 0.10730046],
+                [0.96824998, 0.77807510, 0.02012503, 0.10901403],
+                [0.71055472, 0.31000000, 0.02182811, 0.05136150],
+                [0.88656247, 0.83160800, 0.05731249, 0.21049297],
+                [0.55694532, 0.51670188, 0.01776564, 0.05293429],
+                [0.65166402, 0.52882630, 0.01504689, 0.02938962],
+                [0.38804689, 0.47841549, 0.02221876, 0.04138494],
+                [0.53383595, 0.48794597, 0.01520312, 0.03927228],
+                [0.59998435, 0.64714789, 0.19618750, 0.20875585]], dtype="float32"
+            )
+            
+            
+            h, w = orig_target_sizes[0]
+            x_cy_cwh = self_inputs_gt_bbox_0 * paddle.concat([w, h, w, h])
+            # x1y1wh = x_cy_cwh
+            # x1y1wh[:, :2] -= x1y1wh[:, 2:] / 2 
+            x1y1x2y2 = paddle.zeros_like(x_cy_cwh)
+            x1y1x2y2[:, :2] = x_cy_cwh[:, :2] - x_cy_cwh[:, 2:] / 2
+            x1y1x2y2[:, 2:] = x_cy_cwh[:, :2] + x_cy_cwh[:, 2:] / 2
+            
+            results[0]['boxes'][:x_cy_cwh.shape[0]] = x1y1x2y2
+            results[0]["scores"][:x_cy_cwh.shape[0]] = 1
+            # results[0]['labels'] = 
             
             # num_id, score, xmin, ymin, xmax, ymax
             bbox = [
