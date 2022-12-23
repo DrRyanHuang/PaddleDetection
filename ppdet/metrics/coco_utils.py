@@ -50,7 +50,7 @@ def get_infer_results(outs, catid, bias=0):
                 outs['bbox'], outs['bbox_num'], im_id, catid, bias=bias)
         else:
             infer_res['bbox'] = get_det_res(
-                outs['bbox'], outs['bbox_num'], im_id, catid, bias=bias)
+                outs['bbox'], outs['bbox_num'], im_id, catid, bias=bias) # num_id, score, xmin, ymin, xmax, ymax
 
     if 'mask' in outs:
         # mask post process

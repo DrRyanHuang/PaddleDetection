@@ -712,7 +712,8 @@ class Obj2SeqMutiClassPostProcess(nn.Layer):
             box_scale = scale_fct[bs_idx] # cs_all, 4
             all_scores = F.sigmoid(output["pred_logits"])
             nobj = all_scores.shape[-1]
-            all_boxes = self.box_cxcywh_to_xyxy(output["pred_boxes"]) * box_scale[:, None, :]
+            all_boxes = self.box_cxcywh_to_xyxy(output["pred_boxes"]) * box_scale[:, None, :] # [..., 4] 
+            # all_boxes[..., 2:] -= all_boxes[..., :2] # x_min, y_min, w, h
             results_det = []
             for id_b in bs_idx.unique():
                 out_scores = all_scores[bs_idx == id_b].flatten() # cs_all*nobj
@@ -724,24 +725,24 @@ class Obj2SeqMutiClassPostProcess(nn.Layer):
                 results_det.append({'scores': s, 'labels': out_labels[indices], 'boxes': out_bbox[indices]})
             return results_det
 
-        if "pose" in outputs:
-            output = outputs["pose"]
-            bs_idx, cls_idx = output["batch_index"], output["class_index"] # cs_all
-            box_scale = scale_fct[bs_idx] # cs_all, 4
-            all_scores = F.sigmoid(output["pred_logits"])
-            nobj = all_scores.shape[-1]
-            all_keypoints = output["pred_keypoints"] * box_scale[:, None, None, :2]
-            all_keypoints = paddle.concat([all_keypoints, paddle.ones_like(all_keypoints)[..., :1]], axis=-1)
-            all_boxes = self.box_cxcywh_to_xyxy(output["pred_boxes"]) * box_scale[:, None, :]
-            results_det = []
-            for id_b in bs_idx.unique():
-                out_scores = all_scores[bs_idx == id_b].flatten() # cs_all*nobj
-                out_bbox = all_boxes[bs_idx == id_b].flatten(0, 1)
-                out_keypoints = all_keypoints[bs_idx == id_b].flatten(0, 1)
-                out_labels = paddle.zeros_like(out_scores, dtype="int64")
+        # if "pose" in outputs:
+        #     output = outputs["pose"]
+        #     bs_idx, cls_idx = output["batch_index"], output["class_index"] # cs_all
+        #     box_scale = scale_fct[bs_idx] # cs_all, 4
+        #     all_scores = F.sigmoid(output["pred_logits"])
+        #     nobj = all_scores.shape[-1]
+        #     all_keypoints = output["pred_keypoints"] * box_scale[:, None, None, :2]
+        #     all_keypoints = paddle.concat([all_keypoints, paddle.ones_like(all_keypoints)[..., :1]], axis=-1)
+        #     all_boxes = self.box_cxcywh_to_xyxy(output["pred_boxes"]) * box_scale[:, None, :]
+        #     results_det = []
+        #     for id_b in bs_idx.unique():
+        #         out_scores = all_scores[bs_idx == id_b].flatten() # cs_all*nobj
+        #         out_bbox = all_boxes[bs_idx == id_b].flatten(0, 1)
+        #         out_keypoints = all_keypoints[bs_idx == id_b].flatten(0, 1)
+        #         out_labels = paddle.zeros_like(out_scores, dtype="int64")
 
-                s, indices = out_scores.sort(descending=True), out_scores.argsort(descending=True)
-                s, indices = s[:100], indices[:100]
-                results_det.append({'scores': s, 
-                                    'labels': out_labels[indices], 'boxes': out_bbox[indices], 'keypoints': out_keypoints[indices]})
-            return results_det
+        #         s, indices = out_scores.sort(descending=True), out_scores.argsort(descending=True)
+        #         s, indices = s[:100], indices[:100]
+        #         results_det.append({'scores': s, 
+        #                             'labels': out_labels[indices], 'boxes': out_bbox[indices], 'keypoints': out_keypoints[indices]})
+        #     return results_det

@@ -916,7 +916,7 @@ class Trainer(object):
 
         if visualize:
             for outs in results:
-                batch_res = get_infer_results(outs, clsid2catid)
+                batch_res = get_infer_results(outs, clsid2catid) # num_id, score, xmin, ymin, xmax, ymax
                 bbox_num = outs['bbox_num']
 
                 start = 0

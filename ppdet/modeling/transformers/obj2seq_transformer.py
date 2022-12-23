@@ -394,7 +394,7 @@ class Obj2SeqDeformableTransformer(nn.Layer):
         # ---------- 测试时间 1.7s 100次 ----------
         srcs, mask, enc_kwargs, cls_kwargs, obj_kwargs = self.prepare_for_deformable(srcs, masks)
 
-        # encoder ----- 0.5s -----
+        # # encoder ----- 0.5s -----
         srcs = self.encoder(srcs, padding_mask=mask, **enc_kwargs) if self.encoder is not None else srcs
         
         
