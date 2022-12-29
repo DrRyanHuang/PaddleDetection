@@ -14,7 +14,7 @@ TrainDataset:
     anno_path: annotations/instances_val2017.json
     dataset_dir: dataset/coco/COCO
     data_fields: ['image', 'gt_bbox', 'gt_class', 'is_crowd']
-    sample_num: 4
+    sample_num: 2
 
 EvalDataset:
   !COCODataSet
@@ -22,7 +22,7 @@ EvalDataset:
     anno_path: annotations/instances_val2017.json
     dataset_dir: dataset/coco/COCO
     data_fields: ['image', 'gt_bbox', 'gt_class', 'is_crowd']
-    sample_num: 4
+    # sample_num: 60
 
 TestDataset:
   !ImageFolder

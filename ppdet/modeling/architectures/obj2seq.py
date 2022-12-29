@@ -67,8 +67,8 @@ class Obj2Seq(BaseArch):
     # @to_static
     def _forward(self):
         
-        import numpy as np
-        import cv2
+        # import numpy as np
+        # import cv2
         
         # idx = 0
         # image = self.inputs['image'][idx].transpose([1, 2, 0]).numpy()
@@ -98,15 +98,20 @@ class Obj2Seq(BaseArch):
         # h, w = self.inputs["ori_im_shape"][idx].numpy()
         
         
-        
-        # Backbone
-        body_feats = self.backbone(self.inputs)
-        # print(self.inputs['im_id'])
+        with paddle.no_grad():
+            # Backbone
+            body_feats = self.backbone(self.inputs)
+            # print(self.inputs['im_id'])
         
         # 把最初的 mask 插值为小的, 为了和 torch NestedTensor 对齐, -1
         body_feats_mask = [1-F.interpolate(self.inputs['pad_mask'][None], 
                                          size=x.shape[-2:]).squeeze()
                                for x in body_feats]
+        
+        
+        # --------- 删除无需的变量 ---------
+        # del self.inputs["image"]
+        # del self.inputs['pad_mask']
         
         
         # ------------------ transformer 测试时间不到 0.5s ------------------

@@ -85,7 +85,7 @@ class DetPoseProcess(nn.Layer):
     # 一般目标检测后处理
     def post_process_detection(self, signals, reference_points):
         reference = inverse_sigmoid(reference_points) # bs, cs, nobj, 2
-        signals[..., :reference.shape[-1]] += reference
+        signals[..., :reference.shape[-1]] += reference # 前两维加上
         # boxes = signals[..., :4].sigmoid()
         boxes = F.sigmoid(signals[..., :4])
         return {"pred_boxes": boxes}

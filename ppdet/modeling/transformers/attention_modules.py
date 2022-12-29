@@ -112,7 +112,7 @@ class BasicDecoderLayer(nn.Layer):
         return tensor if pos is None else tensor + pos
 
     def self_attn_forward(self, tgt, query_pos, **kwargs):
-        if query_pos is not None and query_pos.shape[0] != tgt.shape[0]:
+        if query_pos is not None and query_pos.shape[0] != tgt.shape[0]: # False
             cs = tgt.shape[0] // query_pos.shape[0]
             query_pos_self = query_pos.repeat_interleave(repeats=cs, axis=0)
         else:
@@ -202,7 +202,11 @@ class MultiHeadDecoderLayer(BasicDecoderLayer):
 
 class DeformableDecoderLayer(BasicDecoderLayer):
     def build_cross_attn(self, args):
-        self.cross_attn = MSDeformAttn(self.d_model, args.n_levels, args.nheads, args.n_points, no_value_proj=args.cross_attn_no_value_proj)
+        self.cross_attn = MSDeformAttn(self.d_model, 
+                                       args.n_levels, 
+                                       args.nheads, 
+                                       args.n_points, 
+                                       no_value_proj=args.cross_attn_no_value_proj)
 
     def cross_attn_forward(self, tgt, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
         # tgt: bs_all, seq, c
@@ -223,11 +227,11 @@ class DeformableDecoderLayer(BasicDecoderLayer):
     def forward(self, tgt, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
         # reference_points: bs / bs_all, seq, 2 or 4
         src_valid_ratios = kwargs.pop("src_valid_ratios") # bs, level, 2
-        if reference_points.shape[-1] == 4:
+        if reference_points.shape[-1] == 4: # False
             src_valid_ratios = paddle.concat([src_valid_ratios, src_valid_ratios], axis=-1)
         # if the number of reference_points and number of src_valid_ratios not match.
         # Expand and repeat for them
-        if src_valid_ratios.shape[0] != reference_points.shape[0]:
+        if src_valid_ratios.shape[0] != reference_points.shape[0]: # False
             repeat_times = (reference_points.shape[0] // src_valid_ratios.shape[0])
             src_valid_ratios = src_valid_ratios.repeat_interleave(repeat_times, axis=0)
         src_valid_ratios = src_valid_ratios[:, None] if reference_points.dim() == 3 else src_valid_ratios[:, None, None]

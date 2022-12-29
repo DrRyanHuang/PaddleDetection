@@ -220,23 +220,27 @@ class HungarianMatcher(nn.Layer):
 
             # Also concat the target labels and boxes
             # tgt_ids = paddle.cat([v["labels"] for v in targets])
-            try:
-                boxes_list = [v["boxes"] for v in targets]    # 此处不可为空
-                tgt_bbox = paddle.concat(boxes_list)          # 目标框位置
-            except:
-                print("len(target) == 0")
-                print(targets)
-                print(outputs)
+            
+            # try:
+            #     boxes_list = [v["boxes"] for v in targets]    # 此处不可为空
+            #     tgt_bbox = paddle.concat(boxes_list)          # 目标框位置
+            # except:
+            #     print("len(target) == 0")
+            #     print(targets)
+            #     print(outputs)
             
             sizes = [t["boxes"].shape[0] for t in targets]  # 当前 batch[x] 中 bbox 的数量
             num_local = sum(sizes)                          # 当前 batch 的总 bbox
 
             if num_local == 0:
                 return [(paddle.to_tensor([], dtype=paddle.int64), paddle.to_tensor([], dtype=paddle.int64)) for _ in sizes]
-            
+
+            boxes_list = [v["boxes"] for v in targets]    # 此处不可为空
+            tgt_bbox = paddle.concat(boxes_list)          # 目标框位置
+
             assert ("loss_bce" in weight_dict) ^ ("loss_ce" in weight_dict)
             # Compute the classification cost.
-            if "loss_bce" in weight_dict:
+            if "loss_bce" in weight_dict: # False
                 cost_class = - out_prob * weight_dict["loss_bce"]
             elif "loss_ce" in weight_dict:
                 alpha = 0.25
@@ -287,7 +291,15 @@ class HungarianMatcher(nn.Layer):
 
             C = C.reshape([bs, num_queries, -1]).cpu()
 
-            indices = [linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))]
+            indices = [linear_sum_assignment(c.numpy()[i]) for i, c in enumerate(C.split(sizes, -1))] # 这有问题
+            
+            # indices = []
+            # for i, (sz, c) in enumerate(zip(sizes, C.split(sizes, -1))):
+            #     # x = linear_sum_assignment(c[i])
+            #     if 0 != sz:
+            #         print(c[i])
+            
+            
             return [(paddle.to_tensor(i, dtype=paddle.int64, place=paddle.CPUPlace()), 
                      paddle.to_tensor(j, dtype=paddle.int64, place=paddle.CPUPlace())) 
                                                   for i, j in indices]

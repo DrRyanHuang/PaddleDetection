@@ -13,7 +13,8 @@ ResNet:
   # index 0 stands for res2
   depth: 50
   norm_type: bn
-  freeze_at: 0
+  freeze_norm: true
+  freeze_at: -1
   return_idx: [1, 2, 3]
   lr_mult_list: [0.0, 0.1, 0.1, 0.1]
   num_stages: 4

@@ -11,7 +11,7 @@ import math
 import copy
 
 from ppdet.core.workspace import register, serializable
-from .deformable_transformer import DeformableTransformerDecoderLayer, DeformableTransformerDecoder
+# from .deformable_transformer import DeformableTransformerDecoderLayer, DeformableTransformerDecoder
 from .asl_losses import AsymmetricLoss, AsymmetricLossOptimized
 from .attention_modules import MultiHeadDecoderLayer as TransformerDecoderLayer
 
@@ -61,7 +61,7 @@ class AbstractClassifier(nn.Layer):
         assert x.dim() == 3
         W = self.getClassifierWeight(class_vector, cls_idx) # W: csall*d
 
-        sim = (x * W).sum(-1) # bs*cs*nobj
+        sim = (x * W).sum(-1) # bs*cs*nobj # 相当于计算点积 => 计算 cos 相似度
         if True:
             sim = sim + self.b
         return sim
@@ -181,7 +181,8 @@ class RetentionPolicy(nn.Layer):
         bs_idx, cls_idx = [], []
         for id_b, (sorted_idx) in enumerate(sorted_idxs):
             n_train = num_train[id_b]
-            cls_idx.append(sorted_idx[:n_train].sort())
+            # cls_idx.append(sorted_idx[:n_train].sort())
+            cls_idx.append(sorted_idx[:n_train])
             bs_idx.append(paddle.full_like(cls_idx[-1], id_b))
         return paddle.concat(bs_idx), paddle.concat(cls_idx)
 
@@ -318,7 +319,7 @@ class PromptIndicator(nn.Layer):
         outputs = {
             'tgt_class': tgt_class,               # bs, cls_k, d
             'cls_label_logits': label_logits,     # bs, cls_k
-            'cls_output_feats': tgt_class,        # bs, cls_k, d
+            'cls_output_feats': tgt_class,        # bs, cls_k, d  # 这个是不是没用了
         }
 
         # select some classes
@@ -338,7 +339,7 @@ class PromptIndicator(nn.Layer):
 
         if len(output_label_logits) > 1: # 因为有多个 prompt_blocks
             aux_outputs = [{'cls_label_logits': a}
-                           for a in output_label_logits[:-1]]
+                           for a in output_label_logits[:-1]] # 非最后一个的输出的 output_label_logits
         else:
             aux_outputs = []
 

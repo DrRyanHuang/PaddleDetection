@@ -160,7 +160,7 @@ class UnifiedSingleClassCriterion(nn.Layer):
         """
         assert 'pred_boxes' in outputs
         idx = self._get_src_permutation_idx(indices)
-        src_boxes = outputs['pred_boxes'][idx]
+        src_boxes = outputs['pred_boxes'][idx] # ?
         # target_boxes = paddle.concat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], axis=0)
         target_boxes = paddle.concat([zero_zero_select(t['boxes'], i) for t, (_, i) in zip(targets, indices)], axis=0)
 

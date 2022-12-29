@@ -60,7 +60,7 @@ def parse_args():
     parser.add_argument(
         "--draw_threshold",
         type=float,
-        default=0.5,
+        default=0.15,
         help="Threshold to reserve the result for visualization.")
     parser.add_argument(
         "--slim_config",

@@ -357,65 +357,76 @@ class Obj2SeqDeformableTransformer(nn.Layer):
             )
         reference_points = paddle.concat(reference_points, 1).unsqueeze(2)
         reference_points = reference_points * valid_ratios
-        return reference_points # [bs, 17197, 4, 2]
+        # https://github.com/fundamentalvision/Deformable-DETR/issues/36
+        return reference_points # [bs, 17197, 4, 2] # [x, x, 1, x] 重复了4次
     
 
     def forward(self, src_feats, src_mask, targets=None):
         
-        # src_feats: a list of tensors [(bs, c, h_i, w_i), ...]
-        # src_mask : a list of tensors [(bs, h_i, w_i), ...]
-        
-        if src_mask[0].ndim == 2:
-            src_mask = [
-                mask[None] for mask in src_mask
-            ]
-        
-        
-        # ========= 加工变量 srcs 和 masks =========
-        srcs =  []
-        masks = []
-        for i in range(len(src_feats)):
-            srcs.append(self.input_proj[i](src_feats[i]))
-            masks.append(src_mask[i])
+        with paddle.no_grad():
+        # if True:
             
-        if self.num_feature_levels > len(srcs):
-            len_srcs = len(srcs)
-            for i in range(len_srcs, self.num_feature_levels):
-                if i == len_srcs:
-                    srcs.append(self.input_proj[i](src_feats[-1]))
-                else:
-                    srcs.append(self.input_proj[i](srcs[-1]))
-                    
-                mask = F.interpolate(masks[-1][None], size=srcs[-1].shape[-2:])[0]
-                masks.append(mask)
-        # ========= 加工变量 srcs 和 masks =========
-        
-        
-        # ---------- 测试时间 1.7s 100次 ----------
-        srcs, mask, enc_kwargs, cls_kwargs, obj_kwargs = self.prepare_for_deformable(srcs, masks)
-
-        # # encoder ----- 0.5s -----
-        srcs = self.encoder(srcs, padding_mask=mask, **enc_kwargs) if self.encoder is not None else srcs
-        
-        
-        # prompt_indicator ----- 0.03s -----
-        outputs, loss_dict = {}, {}
-        if self.prompt_indicator is not None:
-            cls_outputs, cls_loss_dict = self.prompt_indicator(srcs, mask, targets=targets, kwargs=cls_kwargs)
-            outputs.update(cls_outputs)
-            loss_dict.update(cls_loss_dict)
-            additional_object_inputs = dict(
-                bs_idx = outputs["bs_idx"] if "bs_idx" in outputs else None,
-                cls_idx = outputs["cls_idx"] if "cls_idx" in outputs else None,
-                class_vector = outputs["tgt_class"],           # cs_all, d
-                previous_logits = outputs["cls_label_logits"], # bs, 80
-            )
-        else:
-            additional_object_inputs = {}
+            # src_feats: a list of tensors [(bs, c, h_i, w_i), ...]
+            # src_mask : a list of tensors [(bs, h_i, w_i), ...]
             
+            if src_mask[0].ndim == 2:
+                src_mask = [
+                    mask[None] for mask in src_mask
+                ]
+            
+            
+            # ========= 加工变量 srcs 和 masks =========
+            srcs =  []
+            masks = []
+            for i in range(len(src_feats)):
+                srcs.append(self.input_proj[i](src_feats[i]))
+                masks.append(src_mask[i])
+                
+            if self.num_feature_levels > len(srcs):
+                len_srcs = len(srcs)
+                for i in range(len_srcs, self.num_feature_levels):
+                    if i == len_srcs:
+                        srcs.append(self.input_proj[i](src_feats[-1]))
+                    else:
+                        srcs.append(self.input_proj[i](srcs[-1]))
+                        
+                    mask = F.interpolate(masks[-1][None], size=srcs[-1].shape[-2:])[0]
+                    masks.append(mask)
+            # ========= 加工变量 srcs 和 masks =========
+            
+            
+            # ---------- 测试时间 1.7s 100次 ----------
+            srcs, mask, enc_kwargs, cls_kwargs, obj_kwargs = self.prepare_for_deformable(srcs, masks)
+
+            # # encoder ----- 0.5s -----
+            srcs = self.encoder(srcs, padding_mask=mask, **enc_kwargs) if self.encoder is not None else srcs
+            
+            
+            # prompt_indicator ----- 0.03s -----
+            outputs, loss_dict = {}, {}
+            if self.prompt_indicator is not None:
+                cls_outputs, cls_loss_dict = self.prompt_indicator(srcs, mask, targets=targets, kwargs=cls_kwargs)
+                outputs.update(cls_outputs)
+                loss_dict.update(cls_loss_dict)
+                additional_object_inputs = dict(
+                    bs_idx = outputs["bs_idx"] if "bs_idx" in outputs else None,
+                    cls_idx = outputs["cls_idx"] if "cls_idx" in outputs else None,
+                    class_vector = outputs["tgt_class"],           # cs_all, d
+                    previous_logits = outputs["cls_label_logits"], # bs, 80
+                )
+            else:
+                additional_object_inputs = {}
+            
+            # print(cls_outputs['cls_label_logits'].argsort(1, True)[:, :20].numpy())
+            # print([l.numpy().tolist() for l in targets['class_label']])
+            
+            # per = ((F.sigmoid(cls_outputs['cls_label_logits']) > 0.2).cast("int32") * targets['multi_label_onehot']).sum() / targets['multi_label_onehot'].sum()
+            # print(per)
 
 
+        loss_dict = {}
         if self.object_decoder is not None:
+        # if False: # 先去只判断类别的有无，之后再看结果
             
             # ------ object_decoder ------ 约 0.8s 
             obj_outputs, obj_loss_dict = self.object_decoder(srcs, 

@@ -230,78 +230,7 @@ class UnifiedSeqHead(DeformableDecoderLayer):
     def with_pos_embed(tensor, pos):
         return tensor if pos is None else tensor + pos
     
-    # def cross_attn_forward(self, tgt, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
-    #     # tgt: bs_all, seq, c
-    #     # src: bs, seq_src, c
-    #     # reference_points: bs / bs_all, seq, lvl, 2 or 4 (len_pt)
-    #     bs_all, seq, c = tgt.shape
-    #     num_levels = reference_points.shape[-2]
-    #     bs = srcs.shape[0]
-    #     cs_batch = kwargs.pop("cs_batch", None)
-    #     src_spatial_shapes = kwargs.pop("src_spatial_shapes")
-    #     level_start_index = kwargs.pop("src_level_start_index")
-
-    #     tgt2 = self.cross_attn(self.with_pos_embed(tgt, query_pos),
-    #                            reference_points,
-    #                            srcs, src_spatial_shapes, level_start_index, src_padding_masks, cs_batch=cs_batch)
-    #     return tgt2
-
-
-    # def forward_post(self, tgt, query_pos, **kwargs):
-    #     # self attention
-    #     if self.self_attn:
-    #         tgt2 = self.self_attn_forward(tgt, query_pos, **kwargs)
-    #         tgt = tgt + self.dropout2(tgt2)
-    #         tgt = self.norm2(tgt)
-
-    #     tgt2 = self.cross_attn_forward(tgt, query_pos, **kwargs)
-    #     tgt = tgt + self.dropout1(tgt2)
-    #     tgt = self.norm1(tgt)
-
-    #     # ffn
-    #     tgt = self.ffn(tgt)
-
-    #     return tgt
     
-
-    # def forward_pre(self, tgt, query_pos, **kwargs):
-    #     # self attention
-    #     if self.self_attn:
-    #         tgt2 = self.norm2(tgt)
-    #         tgt2 = self.self_attn_forward(tgt2, query_pos, **kwargs)
-    #         tgt = tgt + self.dropout2(tgt2)
-
-    #     tgt2 = self.norm1(tgt)
-    #     tgt2 = self.cross_attn_forward(tgt2, query_pos, **kwargs)
-    #     tgt = tgt + self.dropout1(tgt2)
-
-    #     # ffn
-    #     tgt = self.ffn(tgt)
-
-    #     return tgt
-    
-    
-    # def super_super_forward(self, *args, **kwargs):
-    #     if self.normalize_before:
-    #         return self.forward_pre(*args, **kwargs)
-    #     return self.forward_post(*args, **kwargs)
-    
-    # def super_forward(self, tgt, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
-    #     # reference_points: bs / bs_all, seq, 2 or 4
-    #     src_valid_ratios = kwargs.pop("src_valid_ratios") # bs, level, 2
-    #     if reference_points.shape[-1] == 4:
-    #         src_valid_ratios = paddle.concat([src_valid_ratios, src_valid_ratios], axis=-1)
-    #     # if the number of reference_points and number of src_valid_ratios not match.
-    #     # Expand and repeat for them
-    #     if src_valid_ratios.shape[0] != reference_points.shape[0]:
-    #         repeat_times = (reference_points.shape[0] // src_valid_ratios.shape[0])
-    #         src_valid_ratios = src_valid_ratios.repeat_interleave(repeat_times, axis=0)
-    #     src_valid_ratios = src_valid_ratios[:, None] if reference_points.dim() == 3 else src_valid_ratios[:, None, None]
-    #     reference_points_input = reference_points[..., None, :] * src_valid_ratios
-    #     return self.super_super_forward(tgt, query_pos, 
-    #                                     reference_points=reference_points_input, 
-    #                                     srcs=srcs, src_padding_masks=src_padding_masks, **kwargs)
-
     def forward(self, feat, query_pos, reference_points, srcs, src_padding_masks, **kwargs):
         # feat: cs_all, nobj, c
         # srcs: bs, l, c
@@ -353,8 +282,8 @@ class UnifiedSeqHead(DeformableDecoderLayer):
             feat = self.generate_feat_for_next_step(output_feat, output_signal, reference_points, None,id_step)
             reference_points = self.adjust_reference_points(output_signals, reference_points, id_step)
             # TODO: make this more suitable for other tasks
-            if (num_steps == id_step + 1).sum() > 0 and id_step < self.num_steps:
-                count_needs = (num_steps > id_step + 1).sum()
+            if (num_steps == id_step + 1).sum() > 0 and id_step < self.num_steps: 
+                count_needs = (num_steps > id_step + 1).sum() # why all zeros
                 old_cs = feat.shape[0]
                 feat = feat[:count_needs]
                 reference_points = reference_points[:count_needs]
@@ -366,6 +295,32 @@ class UnifiedSeqHead(DeformableDecoderLayer):
         outputs = self.post_process(output_signals, output_classes, original_reference_points, bs_idx, cls_idx)
         # prepare targets
         targets = kwargs.pop("targets", None)
+
+        # import cv2;import numpy as np
+        # idx = 1
+        # image = targets['image'][idx].transpose([1, 2, 0]).numpy()
+        # image = (image * [0.229, 0.224,0.225] + [0.485, 0.456, 0.406]) * 255
+        # image = image.astype(int).astype("uint8")
+        
+        # curr_h = int(targets['pad_mask'][idx].sum(0).max().item())
+        # curr_w = int(targets['pad_mask'][idx].sum(1).max().item())
+        
+        # image = image[:curr_h, :curr_w]
+        # image = image[:, :, ::-1]
+        # image = np.ascontiguousarray(image)
+
+        # bboxes = targets['gt_bbox'][idx].numpy() * [curr_w, curr_h, curr_w, curr_h]
+        # bboxes = bboxes.astype(int)
+        
+        # bid_ = 19; bbox = bboxes[bid_]; cls_ = targets['gt_class'][idx][bid_].item(); print(cls_)
+        # xc, yc, bw, bh = bbox.astype(int)
+        # x1, y1, x2, y2 = int(xc-bw//2), int(yc-bh//2), int(xc+bw//2), int(yc+bh//2)
+
+        # xx = cv2.rectangle(image, (x1, y1), (x2, y2), 255, 2, 8)   # 这里报了错
+        # cv2.imwrite("xxx.png", image)
+        
+        
+        
         if targets is not None and self.training:
             loss_dict = self.criterion(outputs, targets)
         else:

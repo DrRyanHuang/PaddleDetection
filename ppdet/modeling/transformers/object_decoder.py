@@ -128,16 +128,45 @@ class ObjectDecoder(nn.Layer):
         predictor_kwargs["cls_idx"] = cls_idx
         predictor_kwargs["previous_logits"] = previous_logits
         predictor_kwargs["targets"] = targets
+        
+        
+        import numpy as np
+        import cv2
+        
+        # idx = 1
+        # image = targets['image'][idx].transpose([1, 2, 0]).numpy()
+        # image = (image * [0.229, 0.224,0.225] + [0.485, 0.456, 0.406]) * 255
+        # image = image.astype(int).astype("uint8")
+        
+        # curr_h = int(targets['pad_mask'][idx].sum(0).max().item())
+        # curr_w = int(targets['pad_mask'][idx].sum(1).max().item())
+        
+        # image = image[:curr_h, :curr_w]
+        # image = image[:, :, ::-1]
+        # image = np.ascontiguousarray(image)
+
+        # bboxes = targets['gt_bbox'][idx].numpy() * [curr_w, curr_h, curr_w, curr_h]
+        # bboxes = bboxes.astype(int)
+        
+        # bbox = bboxes[0]
+        # xc, yc, bw, bh = bbox.astype(int)
+
+        # x1, y1, x2, y2 = int(xc-bw//2), int(yc-bh//2), int(xc+bw//2), int(yc+bh//2)
+
+        # xx = cv2.rectangle(image, (x1, y1), (x2, y2), 255, 2, 8)   # 这里报了错
+        # cv2.imwrite("xxx.png", image)
 
         loss_dict = {}
         for lid, layer in enumerate(self.object_decoder_layers):
-            tgt_object = layer(tgt_object, 
-                               query_pos_embed,  # None
-                               reference_points, 
-                               srcs=srcs, 
-                               src_padding_masks=mask, 
-                               **kwargs)
-            if self.training or self.refine_reference_points or lid == self.num_layers - 1:
+            # TODO:TODO:TODO
+            # tgt_object = layer(tgt_object, 
+            #                    query_pos_embed,  # None
+            #                    reference_points, 
+            #                    srcs=srcs, 
+            #                    src_padding_masks=mask, 
+            #                    **kwargs)
+            # if self.training or self.refine_reference_points or lid == self.num_layers - 1:
+            if True:
                 predictor_kwargs["rearrange"] = not self.refine_reference_points
                 # TODO: move arrange into prompt indicator
                 layer_outputs, layer_loss = self.detect_head[lid](tgt_object, 
@@ -151,6 +180,8 @@ class ObjectDecoder(nn.Layer):
                 all_outputs.append(layer_outputs)
                 for key in layer_loss:
                     loss_dict[f"{key}_{lid}"] = layer_loss[key]
+                    
+            break
 
         outputs = all_outputs.pop()
         return outputs, loss_dict

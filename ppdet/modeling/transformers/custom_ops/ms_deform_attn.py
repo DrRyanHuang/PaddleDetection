@@ -73,7 +73,7 @@ class MSDeformAttn(nn.Layer):
         self._reset_parameters()
 
     def _reset_parameters(self):
-        constant_(self.sampling_offsets.weight)
+        constant_(self.sampling_offsets.weight, 0.)
         thetas = paddle.arange(self.n_heads, dtype="float32") * (2.0 * math.pi / self.n_heads)
         
         # grid_init = paddle.stack([thetas.cos(), thetas.sin()], -1)
@@ -94,14 +94,14 @@ class MSDeformAttn(nn.Layer):
         grid_init *= scaling
         self.sampling_offsets.bias.set_value(grid_init.flatten())
         
-        constant_(self.attention_weights.weight)
-        constant_(self.attention_weights.bias)
+        constant_(self.attention_weights.weight, 0.)
+        constant_(self.attention_weights.bias, 0.)
         if not self.no_value_proj:
             xavier_uniform_(self.value_proj.weight)
-            constant_(self.value_proj.bias)
+            constant_(self.value_proj.bias, 0.)
         
         xavier_uniform_(self.output_proj.weight)
-        constant_(self.output_proj.bias)
+        constant_(self.output_proj.bias, 0.)
 
     def preprocess_value(self, input_flatten, input_padding_mask=None, cs_batch=None, bs_idx=None):
         N, Len_in, _ = input_flatten.shape

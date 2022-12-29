@@ -56,7 +56,7 @@ class ClasswiseCriterion(nn.Layer):
                 tgtThis = {}
                 id_c = id_c.item()
                 # if id_c in targets[id_b]:
-                if id_c in targets["gt_class"][id_b].unique():
+                if id_c in targets["class_label"][id_b]:
                     id_c_mask =  (targets["gt_class"][id_b].flatten() == id_c)
                     tgtOrigin = {
                         "boxes"  : targets["gt_bbox"][id_b][id_c_mask],

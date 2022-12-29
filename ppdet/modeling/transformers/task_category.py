@@ -51,7 +51,7 @@ class TaskCategory():
         """
         taskIndexes = self.id_to_index[cls_idx] # cs_all
         tasks = {}
-        for taskIdx in taskIndexes.unique():
+        for taskIdx in taskIndexes.unique(): # 只有一个任务
             tasks[taskIdx.item()] = {
                 "indexes": (taskIndexes == taskIdx),
                 "cls_idx": cls_idx[taskIndexes == taskIdx],
@@ -62,7 +62,10 @@ class TaskCategory():
     def arrangeBySteps(self, cls_idx, *args):
         tIds = [self.id_to_index[ic] for ic in cls_idx]
         nSteps = paddle.to_tensor([self.tasks[tId].num_steps for tId in tIds], place=paddle.CPUPlace())
+        
+        # 这里排序排个毛线?
         nSteps, indices = nSteps.sort(descending=True).cpu(), nSteps.argsort(descending=True).cpu()
+        
         return (nSteps, cls_idx[indices], *[a[indices] if a is not None else None for a in args])
 
     def getNumSteps(self, cls_idx, *args):
