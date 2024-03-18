@@ -29,7 +29,7 @@ from paddle.regularizer import L2Decay
 
 from ppdet.core.workspace import register
 from ..layers import MultiHeadAttention
-from ..heads.detr_head import MLP
+from ..heads.detr_head import MLP, rezero_MLP
 from .deformable_transformer import MSDeformableAttention
 from ..initializer import (
     linear_init_,
@@ -403,7 +403,7 @@ class RTDETRTransformer(nn.Layer):
             ),
         )
         self.enc_score_head = nn.Linear(hidden_dim, num_classes)
-        self.enc_bbox_head = MLP(hidden_dim, hidden_dim, 4, num_layers=3)
+        self.enc_bbox_head = rezero_MLP(hidden_dim, hidden_dim, 4, num_layers=3)
 
         # decoder head
         self.dec_score_head = nn.LayerList(
@@ -411,7 +411,7 @@ class RTDETRTransformer(nn.Layer):
         )
         self.dec_bbox_head = nn.LayerList(
             [
-                MLP(hidden_dim, hidden_dim, 4, num_layers=3)
+                rezero_MLP(hidden_dim, hidden_dim, 4, num_layers=3)
                 for _ in range(num_decoder_layers)
             ]
         )

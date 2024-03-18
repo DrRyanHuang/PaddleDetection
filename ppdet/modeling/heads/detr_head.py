@@ -19,6 +19,8 @@ from __future__ import print_function
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle import ParamAttr
+from paddle.nn.initializer import Normal, Constant, XavierUniform
 from ppdet.core.workspace import register
 import pycocotools.mask as mask_util
 from ..initializer import linear_init_, constant_
@@ -49,6 +51,39 @@ class MLP(nn.Layer):
     def forward(self, x):
         for i, layer in enumerate(self.layers):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
+        return x
+
+
+class rezero_MLP(nn.Layer):
+    """This code is based on
+    https://github.com/facebookresearch/detr/blob/main/models/detr.py
+    """
+
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
+        super().__init__()
+        self.num_layers = num_layers
+        h = [hidden_dim] * (num_layers - 1)
+        self.layers = nn.LayerList(
+            nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim])
+        )
+
+        self._reset_parameters()
+        self.alpha = self.create_parameter(
+            shape=(1,), attr=ParamAttr(initializer=Constant(0.0))
+        )
+
+    def _reset_parameters(self):
+        for l in self.layers:
+            linear_init_(l)
+
+    def forward(self, x):
+        for i, layer in enumerate(self.layers):
+
+            if i < self.num_layers - 1:
+                x = F.relu(layer(x)) * self.alpha + x
+            else:
+                x = layer(x)
+
         return x
 
 
